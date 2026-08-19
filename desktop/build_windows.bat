@@ -39,4 +39,4 @@ if not exist "%ISCC%" (echo [ERROR] Install Inno Setup 6.& exit /b 1)
 "%ISCC%" desktop\installer.iss
 if errorlevel 1 exit /b 1
 
-echo Build completed: release\RestaurantManager-Setup-1.0.6.exe
+echo Build completed: release\RestaurantManager-Setup-1.0.7.exe
