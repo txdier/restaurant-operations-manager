@@ -6,10 +6,12 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import zipfile
 from pathlib import Path
+from typing import Optional
 
 from .version import APP_ID
 
@@ -24,6 +26,44 @@ def sha256(path: Path) -> str:
 
 def version_tuple(value: str) -> tuple[int, ...]:
     return tuple(int(part) for part in value.split("."))
+
+
+def default_install_dir() -> Path:
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        return Path(local_app_data) / "Programs" / "RestaurantManager"
+    return Path.home() / "AppData" / "Local" / "Programs" / "RestaurantManager"
+
+
+def find_adjacent_package(directory: Path) -> Optional[Path]:
+    packages = sorted(directory.glob("RestaurantManager-Update-*.zip"), key=lambda item: item.stat().st_mtime, reverse=True)
+    return packages[0] if packages else None
+
+
+def select_update_package() -> Optional[Path]:
+    if os.name != "nt":
+        return None
+    script = (
+        "Add-Type -AssemblyName System.Windows.Forms;"
+        "$dialog=New-Object System.Windows.Forms.OpenFileDialog;"
+        "$dialog.Title='Select Restaurant Manager update package';"
+        "$dialog.Filter='Restaurant Manager update (*.zip)|RestaurantManager-Update-*.zip|ZIP files (*.zip)|*.zip';"
+        "if($dialog.ShowDialog() -eq 'OK'){$dialog.FileName}"
+    )
+    result = subprocess.check_output(
+        ["powershell.exe", "-STA", "-NoProfile", "-Command", script],
+        text=True,
+        creationflags=0x08000000,
+    ).strip()
+    return Path(result) if result else None
+
+
+def show_message(message: str, error: bool = False) -> None:
+    if os.name == "nt":
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, message, "餐馆经营管理系统更新", 0x10 if error else 0x40)
+    else:
+        print(message)
 
 
 def wait_for_pid(pid: int, timeout: int = 30) -> None:
@@ -84,15 +124,20 @@ def apply_update(package: Path, install_dir: Path, pid: int = 0, restart: bool =
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="餐馆经营管理系统更新程序")
-    parser.add_argument("package", type=Path)
-    parser.add_argument("--install-dir", type=Path, required=True)
+    parser.add_argument("package", type=Path, nargs="?")
+    parser.add_argument("--install-dir", type=Path, default=default_install_dir())
     parser.add_argument("--pid", type=int, default=0)
     args = parser.parse_args()
     try:
-        apply_update(args.package.resolve(), args.install_dir.resolve(), args.pid)
+        package = args.package or find_adjacent_package(Path(sys.executable).resolve().parent) or select_update_package()
+        if package is None:
+            raise ValueError("未选择更新包。请下载 RestaurantManager-Update-x.y.z.zip 后重试。")
+        apply_update(package.resolve(), args.install_dir.resolve(), args.pid)
+        show_message("更新完成，餐馆经营管理系统即将启动。")
         return 0
     except Exception as error:
         print(f"更新失败：{error}")
+        show_message(f"更新失败：{error}", error=True)
         return 1
 
 

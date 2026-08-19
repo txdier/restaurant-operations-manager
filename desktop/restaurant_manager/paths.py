@@ -39,6 +39,10 @@ def log_dir() -> Path:
     return root
 
 
+def log_file() -> Path:
+    return log_dir() / "desktop.log"
+
+
 def web_dir() -> Path:
     bundled = getattr(sys, "_MEIPASS", None)
     if bundled:

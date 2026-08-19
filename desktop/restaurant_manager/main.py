@@ -4,13 +4,13 @@ import os
 import sys
 import logging
 
-from .paths import log_dir
+from .paths import log_file
 from .server import start_server
 from .version import APP_NAME, APP_VERSION
 
 
 def configure_logging() -> None:
-    target = log_dir() / "desktop.log"
+    target = log_file()
     handler = logging.FileHandler(str(target), encoding="utf-8")
     logging.basicConfig(
         level=logging.INFO,

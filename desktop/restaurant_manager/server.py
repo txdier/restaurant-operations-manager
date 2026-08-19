@@ -15,7 +15,7 @@ from typing import Any, Dict, Tuple
 
 from .database import Database
 from .exporter import export_csv_zip, export_xlsx
-from .paths import data_dir, default_backup_dir, web_dir
+from .paths import data_dir, default_backup_dir, log_file, web_dir
 from .security import hash_password, verify_password
 from .version import APP_NAME, APP_VERSION, DATA_SCHEMA_VERSION
 
@@ -213,6 +213,8 @@ class ApiHandler(BaseHTTPRequestHandler):
         if not target.is_file():
             return self.send_error(HTTPStatus.SERVICE_UNAVAILABLE, "Desktop UI has not been built")
         body = target.read_bytes()
+        if target.name == "index.html":
+            body = body.replace(b"__DIAGNOSTIC_LOG_PATH__", json.dumps(str(log_file()), ensure_ascii=True).encode("ascii"))
         self.send_response(200)
         self.send_header("Content-Type", static_content_type(target))
         self.send_header("Content-Length", str(len(body)))

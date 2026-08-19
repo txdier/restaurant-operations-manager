@@ -14,10 +14,12 @@
     <div id="root"><div id="startup-status"><strong>正在启动餐馆经营管理系统…</strong><span>首次启动可能需要几秒钟。</span></div></div>
     <script>
       (() => {
+        const diagnosticLogPath = __DIAGNOSTIC_LOG_PATH__;
         const showError = (detail) => {
           const root = document.getElementById("root");
           if (!root || root.querySelector(".app")) return;
-          root.innerHTML = '<div id="startup-status"><strong>界面加载失败</strong><p>请重新启动程序；如果仍然失败，请查看本地诊断日志：</p><code>%LOCALAPPDATA%\\RestaurantManager\\logs\\desktop.log</code><pre></pre></div>';
+          root.innerHTML = '<div id="startup-status"><strong>界面加载失败</strong><p>请重新启动程序；如果仍然失败，请查看本地诊断日志（不在安装目录）：</p><code></code><pre></pre></div>';
+          root.querySelector("code").textContent = diagnosticLogPath;
           root.querySelector("pre").textContent = String(detail || "JavaScript 未能启动");
         };
         window.addEventListener("error", (event) => showError(event.message || "脚本资源加载失败"), true);

@@ -20,6 +20,8 @@ call npm ci
 if errorlevel 1 exit /b 1
 call npm run desktop:build
 if errorlevel 1 exit /b 1
+node desktop\check_web_compat.mjs
+if errorlevel 1 exit /b 1
 
 python -m pytest desktop\tests
 if errorlevel 1 exit /b 1
@@ -37,4 +39,4 @@ if not exist "%ISCC%" (echo [ERROR] Install Inno Setup 6.& exit /b 1)
 "%ISCC%" desktop\installer.iss
 if errorlevel 1 exit /b 1
 
-echo Build completed: release\RestaurantManager-Setup-1.0.1.exe
+echo Build completed: release\RestaurantManager-Setup-1.0.2.exe
