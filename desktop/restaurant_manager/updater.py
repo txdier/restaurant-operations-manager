@@ -39,7 +39,7 @@ def wait_for_pid(pid: int, timeout: int = 30) -> None:
     raise RuntimeError("餐馆经营管理系统仍在运行，请关闭后重试更新")
 
 
-def apply_update(package: Path, install_dir: Path, pid: int = 0) -> None:
+def apply_update(package: Path, install_dir: Path, pid: int = 0, restart: bool = True) -> None:
     wait_for_pid(pid)
     with tempfile.TemporaryDirectory(prefix="restaurant-update-") as temp:
         temp_dir = Path(temp)
@@ -78,7 +78,7 @@ def apply_update(package: Path, install_dir: Path, pid: int = 0) -> None:
                 shutil.copytree(rollback, install_dir)
             raise
         executable = install_dir / "RestaurantManager.exe"
-        if executable.exists() and os.name == "nt":
+        if restart and executable.exists() and os.name == "nt":
             subprocess.Popen([str(executable)], cwd=str(install_dir))
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import sqlite3
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import datetime
 from pathlib import Path
 from threading import RLock
@@ -67,7 +67,7 @@ class Database:
         restore_copy = self.path.parent / ".restore-candidate.db"
         try:
             shutil.copy2(source, restore_copy)
-            with sqlite3.connect(str(restore_copy)) as check:
+            with closing(sqlite3.connect(str(restore_copy))) as check:
                 migrate_database(check)
                 row = check.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
                 if row is None:

@@ -17,6 +17,6 @@ def test_incremental_update_preserves_unrelated_data(tmp_path: Path):
     with zipfile.ZipFile(package, "w") as archive:
         archive.writestr("update.json", json.dumps(manifest))
         archive.write(payload, "payload/RestaurantManager.exe")
-    apply_update(package, install)
+    apply_update(package, install, restart=False)
     assert (install / "RestaurantManager.exe").read_bytes() == b"new"
     assert json.loads((install / "app-manifest.json").read_text(encoding="utf-8"))["version"] == "1.0.1"
