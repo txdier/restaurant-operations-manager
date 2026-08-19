@@ -12,9 +12,12 @@ if not exist .venv-win7 py -3.8 -m venv .venv-win7
 call .venv-win7\Scripts\activate.bat
 set "PYTHONPATH=%CD%\desktop"
 python -m pip install --upgrade pip==24.0
+if errorlevel 1 exit /b 1
 python -m pip install -r desktop\requirements-win7.txt
+if errorlevel 1 exit /b 1
 
 call npm ci
+if errorlevel 1 exit /b 1
 call npm run desktop:build
 if errorlevel 1 exit /b 1
 

@@ -1,4 +1,4 @@
-# Python 3.8.10（64 位）是 Windows 7 构建基线。
+# Python 3.8.10 (64-bit) is the Windows 7 build baseline.
 PyQt5==5.15.9
 PyQtWebEngine==5.15.6
 openpyxl==3.1.5
