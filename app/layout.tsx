@@ -11,5 +11,6 @@ import "./admin-management.css";
 import "./category-dialog.css";
 import "./import-ui.css";
 import "./status-filter.css";
+import "./lock-screen.css";
 export const metadata:Metadata={title:"餐馆经营管理系统",description:"小餐馆收入、采购、盘点、工资与经营数据管理",other:{"codex-preview":"development"}};
 export default function RootLayout({children}:{children:React.ReactNode}){return <html lang="zh-CN"><body>{children}</body></html>}
