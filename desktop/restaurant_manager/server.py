@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import json
+import logging
 import mimetypes
 import os
 import secrets
@@ -39,22 +41,24 @@ def static_content_type(path: Path) -> str:
 
 
 def windows_dialog(script: str) -> str:
-    """Run a top-most Windows Forms dialog and return its UTF-8 result."""
+    """Run a top-most dialog and return a path without console-codepage loss."""
     if os.name != "nt":
         raise ValueError("文件选择窗口仅在 Windows 桌面版中可用")
     prefix = (
-        "[Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false);"
         "Add-Type -AssemblyName System.Windows.Forms;"
+        "$result='';"
         "$owner=New-Object System.Windows.Forms.Form;"
         "$owner.TopMost=$true;$owner.ShowInTaskbar=$false;$owner.Opacity=0;"
         "$owner.StartPosition='CenterScreen';$owner.Show();"
     )
-    return subprocess.check_output(
-        ["powershell.exe", "-STA", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", prefix + script],
-        encoding="utf-8",
+    suffix = ";if($result){[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($result))}"
+    encoded = subprocess.check_output(
+        ["powershell.exe", "-STA", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", prefix + script + suffix],
+        encoding="ascii",
         errors="strict",
         creationflags=0x08000000,
     ).strip()
+    return base64.b64decode(encoded).decode("utf-8") if encoded else ""
 
 
 class DesktopService:
@@ -142,6 +146,7 @@ class ApiHandler(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(size) or b"{}")
 
     def _api_error(self, error: Exception) -> None:
+        logging.exception("Desktop API request failed: %s", self.path)
         self._json({"ok": False, "error": str(error)}, HTTPStatus.BAD_REQUEST)
 
     def _public_state(self, state: Dict[str, Any]) -> Dict[str, Any]:
@@ -208,7 +213,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                     "$d.Title='导出餐馆经营数据';"
                     f"$d.Filter='{label}';$d.DefaultExt='{extension}';$d.AddExtension=$true;"
                     f"$d.FileName='餐馆经营数据_{stamp}.{extension}';"
-                    "if($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK){$d.FileName};"
+                    "if($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK){$result=$d.FileName};"
                     "$d.Dispose();$owner.Dispose()"
                 )
                 if not selected:
@@ -223,7 +228,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                     "$d.Filter='Excel 工作簿 (*.xlsx)|*.xlsx';"
                     "$d.DefaultExt='xlsx';$d.AddExtension=$true;"
                     "$d.FileName='餐馆支出导入模板.xlsx';"
-                    "if($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK){$d.FileName};"
+                    "if($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK){$result=$d.FileName};"
                     "$d.Dispose();$owner.Dispose()"
                 )
                 if not selected:
@@ -246,7 +251,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                     "$d=New-Object System.Windows.Forms.OpenFileDialog;"
                     "$d.Title='选择支出导入文件';"
                     "$d.Filter='Excel 工作簿 (*.xlsx)|*.xlsx';$d.Multiselect=$false;"
-                    "if($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK){$d.FileName};"
+                    "if($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK){$result=$d.FileName};"
                     "$d.Dispose();$owner.Dispose()"
                 )
                 return self._json({"ok": True, "path": selected})
@@ -254,7 +259,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 selected = windows_dialog(
                     "$d=New-Object System.Windows.Forms.FolderBrowserDialog;"
                     "$d.Description='选择餐馆经营管理系统备份目录';$d.ShowNewFolderButton=$true;"
-                    "if($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK){$d.SelectedPath};"
+                    "if($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK){$result=$d.SelectedPath};"
                     "$d.Dispose();$owner.Dispose()"
                 )
                 return self._json({"ok": True, "path": selected})
