@@ -1,0 +1,4 @@
+.recent-head-actions{display:flex;align-items:end;gap:14px}
+.recent-head-actions label{display:flex;flex-direction:column;gap:5px;color:#68778a;font-size:12px}
+.recent-head-actions select{min-width:105px;padding:6px 9px}
+@media(max-width:760px){.recent-head-actions{width:100%;align-items:flex-end;justify-content:space-between}}
