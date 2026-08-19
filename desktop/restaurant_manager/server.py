@@ -38,6 +38,25 @@ def static_content_type(path: Path) -> str:
     return STATIC_CONTENT_TYPES.get(path.suffix.lower(), mimetypes.guess_type(path.name)[0] or "application/octet-stream")
 
 
+def windows_dialog(script: str) -> str:
+    """Run a top-most Windows Forms dialog and return its UTF-8 result."""
+    if os.name != "nt":
+        raise ValueError("文件选择窗口仅在 Windows 桌面版中可用")
+    prefix = (
+        "[Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false);"
+        "Add-Type -AssemblyName System.Windows.Forms;"
+        "$owner=New-Object System.Windows.Forms.Form;"
+        "$owner.TopMost=$true;$owner.ShowInTaskbar=$false;$owner.Opacity=0;"
+        "$owner.StartPosition='CenterScreen';$owner.Show();"
+    )
+    return subprocess.check_output(
+        ["powershell.exe", "-STA", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", prefix + script],
+        encoding="utf-8",
+        errors="strict",
+        creationflags=0x08000000,
+    ).strip()
+
+
 class DesktopService:
     def __init__(self, database: Database | None = None) -> None:
         self.database = database or Database()
@@ -156,8 +175,14 @@ class ApiHandler(BaseHTTPRequestHandler):
                 state = self.service.database.save(body.get("state", {}), body.get("event", "save_state"))
                 return self._json({"ok": True, "state": self._public_state(state)})
             if self.path == "/api/backup":
-                target = self.service.database.backup(self.service._backup_dir(), "manual")
-                self.service.prune_backups()
+                configured = str(body.get("targetDir", "")).strip()
+                state = self.service.database.load()
+                if configured and configured != str(state.get("settings", {}).get("backupDir", "")):
+                    state["settings"]["backupDir"] = configured
+                    state = self.service.database.save(state, "set_backup_directory")
+                target_dir = self.service._backup_dir(state)
+                target = self.service.database.backup(target_dir, "manual")
+                self.service.prune_backups(state)
                 return self._json({"ok": True, "path": str(target), "items": self.service.backup_list()})
             if self.path == "/api/restore":
                 source = Path(str(body.get("path", "")))
@@ -173,18 +198,37 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return self._json({"ok": self.service.unlock(str(body.get("password", "")))})
             if self.path == "/api/export":
                 state = self.service.database.load()
-                export_dir = data_dir() / "exports"
-                export_dir.mkdir(exist_ok=True)
                 start, end = str(body.get("start", "")), str(body.get("end", ""))
                 stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 kind = body.get("format", "xlsx")
-                target = export_dir / (f"餐馆经营数据_{stamp}.xlsx" if kind == "xlsx" else f"餐馆经营数据_{stamp}.zip")
+                extension = "xlsx" if kind == "xlsx" else "zip"
+                label = "Excel 工作簿 (*.xlsx)|*.xlsx" if kind == "xlsx" else "ZIP 压缩包 (*.zip)|*.zip"
+                selected = windows_dialog(
+                    "$d=New-Object System.Windows.Forms.SaveFileDialog;"
+                    "$d.Title='导出餐馆经营数据';"
+                    f"$d.Filter='{label}';$d.DefaultExt='{extension}';$d.AddExtension=$true;"
+                    f"$d.FileName='餐馆经营数据_{stamp}.{extension}';"
+                    "if($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK){$d.FileName};"
+                    "$d.Dispose();$owner.Dispose()"
+                )
+                if not selected:
+                    return self._json({"ok": True, "path": "", "cancelled": True})
+                target = Path(selected)
                 (export_xlsx if kind == "xlsx" else export_csv_zip)(state, target, start, end)
                 return self._json({"ok": True, "path": str(target)})
             if self.path == "/api/import/template":
-                import_dir = data_dir() / "imports"
-                stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                target = create_import_template(import_dir / f"餐馆支出导入模板_{stamp}.xlsx")
+                selected = windows_dialog(
+                    "$d=New-Object System.Windows.Forms.SaveFileDialog;"
+                    "$d.Title='保存餐馆支出导入模板';"
+                    "$d.Filter='Excel 工作簿 (*.xlsx)|*.xlsx';"
+                    "$d.DefaultExt='xlsx';$d.AddExtension=$true;"
+                    "$d.FileName='餐馆支出导入模板.xlsx';"
+                    "if($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK){$d.FileName};"
+                    "$d.Dispose();$owner.Dispose()"
+                )
+                if not selected:
+                    return self._json({"ok": True, "path": "", "cancelled": True})
+                target = create_import_template(Path(selected))
                 return self._json({"ok": True, "path": str(target)})
             if self.path == "/api/import/preview":
                 preview = preview_import(Path(str(body.get("path", ""))), self.service.database.load())
@@ -198,16 +242,21 @@ class ApiHandler(BaseHTTPRequestHandler):
                 state = self.service.database.save(state, "import_expenses")
                 return self._json({"ok": True, "state": self._public_state(state), "counts": preview["counts"]})
             if self.path == "/api/select-file":
-                if os.name != "nt":
-                    raise ValueError("文件选择窗口仅在 Windows 桌面版中可用")
-                script = "Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Filter='Excel 工作簿 (*.xlsx)|*.xlsx'; $d.Multiselect=$false; if($d.ShowDialog() -eq 'OK'){$d.FileName}"
-                selected = subprocess.check_output(["powershell.exe", "-STA", "-NoProfile", "-Command", script], text=True, creationflags=0x08000000).strip()
+                selected = windows_dialog(
+                    "$d=New-Object System.Windows.Forms.OpenFileDialog;"
+                    "$d.Title='选择支出导入文件';"
+                    "$d.Filter='Excel 工作簿 (*.xlsx)|*.xlsx';$d.Multiselect=$false;"
+                    "if($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK){$d.FileName};"
+                    "$d.Dispose();$owner.Dispose()"
+                )
                 return self._json({"ok": True, "path": selected})
             if self.path == "/api/select-directory":
-                if os.name != "nt":
-                    raise ValueError("目录选择窗口仅在 Windows 桌面版中可用")
-                script = "Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.FolderBrowserDialog; if($d.ShowDialog() -eq 'OK'){$d.SelectedPath}"
-                selected = subprocess.check_output(["powershell.exe", "-STA", "-NoProfile", "-Command", script], text=True, creationflags=0x08000000).strip()
+                selected = windows_dialog(
+                    "$d=New-Object System.Windows.Forms.FolderBrowserDialog;"
+                    "$d.Description='选择餐馆经营管理系统备份目录';$d.ShowNewFolderButton=$true;"
+                    "if($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK){$d.SelectedPath};"
+                    "$d.Dispose();$owner.Dispose()"
+                )
                 return self._json({"ok": True, "path": selected})
             if self.path == "/api/open-directory":
                 requested = Path(str(body.get("path", ""))).expanduser()
