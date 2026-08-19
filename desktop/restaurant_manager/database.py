@@ -11,6 +11,7 @@ from typing import Any, Dict, Iterator
 
 from .migrations import migrate_database, migrate_state
 from .paths import database_path, default_backup_dir
+from .version import DATA_SCHEMA_VERSION
 
 
 class Database:
@@ -18,8 +19,43 @@ class Database:
         self.path = path or database_path()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.lock = RLock()
-        with self.connect() as conn:
-            migrate_database(conn)
+        safety = self._migration_backup()
+        try:
+            with self.connect() as conn:
+                migrate_database(conn)
+        except Exception:
+            if safety:
+                shutil.copy2(safety, self.path)
+            raise
+
+    def _stored_schema_version(self) -> int:
+        if not self.path.exists() or not self.path.stat().st_size:
+            return DATA_SCHEMA_VERSION
+        try:
+            with self.connect() as conn:
+                tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                if "meta" in tables:
+                    row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+                    if row:
+                        return int(row[0])
+                if "app_state" in tables:
+                    row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
+                    return int(json.loads(row[0]).get("schemaVersion", 1)) if row else 1
+                return 1
+        except (sqlite3.Error, ValueError, TypeError, json.JSONDecodeError):
+            return 1
+
+    def _migration_backup(self) -> Path | None:
+        old_version = self._stored_schema_version()
+        if old_version >= DATA_SCHEMA_VERSION or not self.path.exists() or not self.path.stat().st_size:
+            return None
+        root = self.path.parent / "backups"
+        root.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        target = root / f"restaurant_{stamp}_before_schema_v{old_version}_to_v{DATA_SCHEMA_VERSION}.db"
+        with sqlite3.connect(str(self.path)) as source, sqlite3.connect(str(target)) as dest:
+            source.backup(dest)
+        return target
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
