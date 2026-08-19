@@ -1,0 +1,5 @@
+.lock-screen{position:fixed;inset:0;z-index:9999;background:radial-gradient(circle at 50% 35%,#203b59 0,#12253b 42%,#0c1828 100%);display:grid;place-items:center}
+.lock-screen:before{content:"食";position:absolute;top:calc(50% - 180px);width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,#1bcea0,#0789a8);color:#fff;display:grid;place-items:center;font-size:22px;font-weight:700;box-shadow:0 10px 30px #0005}
+.lock-screen .modal{position:relative;width:min(410px,calc(100vw - 32px));border:1px solid #ffffff18;box-shadow:0 28px 90px #0008}
+.lock-screen .modal>p{color:#68778b;line-height:1.7}
+.lock-screen .modal footer{border-top:1px solid var(--line);padding-top:16px}
