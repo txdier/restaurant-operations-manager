@@ -1,8 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
 
-root = Path(SPECPATH).parent.parent
-desktop = root / "desktop"
+desktop = Path(SPECPATH)
+root = desktop.parent
 
 a = Analysis(
     [str(desktop / "run_app.py")],
