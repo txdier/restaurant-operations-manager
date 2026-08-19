@@ -76,10 +76,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = if ($env:GITHUB_REF -like "refs/tags/v*") { $env:GITHUB_REF_NAME } else { "v$env:APP_VERSION" }
-          gh release view $tag *> $null
+          cmd /c "gh release view $tag >nul 2>nul"
           if ($LASTEXITCODE -eq 0) {
             Write-Host "Release $tag already exists; uploading current Windows packages."
             gh release upload $tag release/* --clobber
-            exit 0
+            exit $LASTEXITCODE
           }
           gh release create $tag release/* --target $env:GITHUB_SHA --title "餐馆经营管理系统 $env:APP_VERSION" --generate-notes
+          exit $LASTEXITCODE
