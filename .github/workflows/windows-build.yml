@@ -47,7 +47,8 @@ jobs:
       - name: Read application version
         shell: powershell
         run: |
-          $manifest = Get-Content desktop/app-manifest.json -Raw | ConvertFrom-Json
+          $manifest = Get-Content desktop/app-manifest.json -Raw -Encoding UTF8 | ConvertFrom-Json
+          "APP_NAME=$($manifest.name)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "APP_VERSION=$($manifest.version)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Build and test installer
@@ -76,11 +77,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = if ($env:GITHUB_REF -like "refs/tags/v*") { $env:GITHUB_REF_NAME } else { "v$env:APP_VERSION" }
+          $title = "$env:APP_NAME $env:APP_VERSION"
           cmd /c "gh release view $tag >nul 2>nul"
           if ($LASTEXITCODE -eq 0) {
+            gh release edit $tag --title $title
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             Write-Host "Release $tag already exists; uploading current Windows packages."
             gh release upload $tag release/* --clobber
             exit $LASTEXITCODE
           }
-          gh release create $tag release/* --target $env:GITHUB_SHA --title "餐馆经营管理系统 $env:APP_VERSION" --generate-notes
+          gh release create $tag release/* --target $env:GITHUB_SHA --title $title --generate-notes
           exit $LASTEXITCODE
