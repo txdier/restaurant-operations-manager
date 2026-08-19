@@ -65,8 +65,10 @@ def create_import_template(target: Path) -> Path:
 
 
 def preview_import(path: Path, state: Dict[str, Any]) -> Dict[str, Any]:
-    if not path.exists() or path.suffix.lower() != ".xlsx":
-        raise ValueError("请选择有效的 .xlsx 导入文件")
+    if path.suffix.lower() != ".xlsx":
+        raise ValueError("导入文件必须是 .xlsx 格式")
+    if not path.is_file():
+        raise ValueError(f"找不到所选文件：{path}。请重新选择；Windows 7 建议先将文件放到桌面后再试")
     book = load_workbook(path, data_only=True, read_only=True)
     missing = [name for name in ("快速支出", "详细采购") if name not in book.sheetnames]
     if missing:
