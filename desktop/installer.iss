@@ -1,5 +1,5 @@
 #define MyAppName "餐馆经营管理系统"
-#define MyAppVersion "1.0.5"
+#define MyAppVersion "1.0.6"
 #define MyAppExeName "RestaurantManager.exe"
 
 [Setup]
