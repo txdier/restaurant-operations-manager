@@ -15,6 +15,7 @@ from typing import Any, Dict, Tuple
 
 from .database import Database
 from .exporter import export_csv_zip, export_xlsx
+from .importer import apply_import, create_import_template, preview_import
 from .paths import data_dir, default_backup_dir, log_file, web_dir
 from .security import hash_password, verify_password
 from .version import APP_NAME, APP_VERSION, DATA_SCHEMA_VERSION
@@ -180,6 +181,28 @@ class ApiHandler(BaseHTTPRequestHandler):
                 target = export_dir / (f"餐馆经营数据_{stamp}.xlsx" if kind == "xlsx" else f"餐馆经营数据_{stamp}.zip")
                 (export_xlsx if kind == "xlsx" else export_csv_zip)(state, target, start, end)
                 return self._json({"ok": True, "path": str(target)})
+            if self.path == "/api/import/template":
+                import_dir = data_dir() / "imports"
+                stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                target = create_import_template(import_dir / f"餐馆支出导入模板_{stamp}.xlsx")
+                return self._json({"ok": True, "path": str(target)})
+            if self.path == "/api/import/preview":
+                preview = preview_import(Path(str(body.get("path", ""))), self.service.database.load())
+                return self._json({"ok": True, "preview": preview})
+            if self.path == "/api/import/apply":
+                source = Path(str(body.get("path", "")))
+                state = self.service.database.load()
+                preview = preview_import(source, state)
+                self.service.database.backup(self.service._backup_dir(state), "before_import")
+                state = apply_import(preview, state, bool(body.get("createUnknownProducts", False)))
+                state = self.service.database.save(state, "import_expenses")
+                return self._json({"ok": True, "state": self._public_state(state), "counts": preview["counts"]})
+            if self.path == "/api/select-file":
+                if os.name != "nt":
+                    raise ValueError("文件选择窗口仅在 Windows 桌面版中可用")
+                script = "Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Filter='Excel 工作簿 (*.xlsx)|*.xlsx'; $d.Multiselect=$false; if($d.ShowDialog() -eq 'OK'){$d.FileName}"
+                selected = subprocess.check_output(["powershell.exe", "-STA", "-NoProfile", "-Command", script], text=True, creationflags=0x08000000).strip()
+                return self._json({"ok": True, "path": selected})
             if self.path == "/api/select-directory":
                 if os.name != "nt":
                     raise ValueError("目录选择窗口仅在 Windows 桌面版中可用")
