@@ -33,6 +33,12 @@ def default_backup_dir() -> Path:
     return root
 
 
+def log_dir() -> Path:
+    root = data_dir() / "logs"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
 def web_dir() -> Path:
     bundled = getattr(sys, "_MEIPASS", None)
     if bundled:

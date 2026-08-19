@@ -4,9 +4,29 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>餐馆经营管理系统</title>
+    <style>
+      #startup-status{font-family:"Microsoft YaHei",sans-serif;color:#526174;padding:32px}
+      #startup-status strong{display:block;color:#263b50;font-size:18px;margin-bottom:10px}
+      #startup-status pre{white-space:pre-wrap;color:#b42318;background:#fff1f0;border:1px solid #ffd6d2;padding:14px;border-radius:8px}
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div id="startup-status"><strong>正在启动餐馆经营管理系统…</strong><span>首次启动可能需要几秒钟。</span></div></div>
+    <script>
+      (() => {
+        const showError = (detail) => {
+          const root = document.getElementById("root");
+          if (!root || root.querySelector(".app")) return;
+          root.innerHTML = '<div id="startup-status"><strong>界面加载失败</strong><p>请重新启动程序；如果仍然失败，请查看本地诊断日志：</p><code>%LOCALAPPDATA%\\RestaurantManager\\logs\\desktop.log</code><pre></pre></div>';
+          root.querySelector("pre").textContent = String(detail || "JavaScript 未能启动");
+        };
+        window.addEventListener("error", (event) => showError(event.message || "脚本资源加载失败"), true);
+        window.addEventListener("unhandledrejection", (event) => showError(event.reason && (event.reason.stack || event.reason.message) || event.reason));
+        window.setTimeout(() => {
+          if (!document.querySelector("#root .app")) showError("前端程序启动超时");
+        }, 8000);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

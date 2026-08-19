@@ -20,6 +20,23 @@ from .security import hash_password, verify_password
 from .version import APP_NAME, APP_VERSION, DATA_SCHEMA_VERSION
 
 
+STATIC_CONTENT_TYPES = {
+    ".css": "text/css; charset=utf-8",
+    ".html": "text/html; charset=utf-8",
+    ".ico": "image/x-icon",
+    ".js": "application/javascript; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".map": "application/json; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+}
+
+
+def static_content_type(path: Path) -> str:
+    return STATIC_CONTENT_TYPES.get(path.suffix.lower(), mimetypes.guess_type(path.name)[0] or "application/octet-stream")
+
+
 class DesktopService:
     def __init__(self, database: Database | None = None) -> None:
         self.database = database or Database()
@@ -197,7 +214,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             return self.send_error(HTTPStatus.SERVICE_UNAVAILABLE, "Desktop UI has not been built")
         body = target.read_bytes()
         self.send_response(200)
-        self.send_header("Content-Type", mimetypes.guess_type(target.name)[0] or "application/octet-stream")
+        self.send_header("Content-Type", static_content_type(target))
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
