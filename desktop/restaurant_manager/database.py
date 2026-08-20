@@ -65,6 +65,23 @@ class Database:
         finally:
             conn.close()
 
+    def _clear_wal_sidecars(self) -> None:
+        for suffix in ("-wal", "-shm"):
+            Path(str(self.path) + suffix).unlink(missing_ok=True)
+
+    def _replace_from_snapshot(self, source: Path) -> None:
+        """Replace the active database from a checked SQLite snapshot.
+
+        All Database operations share the same lock, so once acquired there are no
+        application-owned SQLite connections writing to the target. Removing WAL/SHM
+        sidecars before and after the copy prevents pages from the previous database
+        from being replayed against the restored file on the next connection.
+        """
+        with self.lock:
+            self._clear_wal_sidecars()
+            shutil.copy2(source, self.path)
+            self._clear_wal_sidecars()
+
     def load(self) -> Dict[str, Any]:
         with self.lock, self.connect() as conn:
             row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
@@ -109,12 +126,14 @@ class Database:
                 if row is None:
                     raise ValueError("备份中没有可恢复的数据")
                 migrate_state(json.loads(row[0]))
-            with self.lock:
-                shutil.copy2(restore_copy, self.path)
+                integrity = check.execute("PRAGMA integrity_check").fetchone()
+                if not integrity or integrity[0] != "ok":
+                    raise ValueError("备份数据库完整性检查失败")
+            self._replace_from_snapshot(restore_copy)
             with self.connect() as conn:
                 migrate_database(conn)
         except Exception:
-            shutil.copy2(safety, self.path)
+            self._replace_from_snapshot(safety)
             raise
         finally:
             restore_copy.unlink(missing_ok=True)
