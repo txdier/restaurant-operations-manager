@@ -41,6 +41,24 @@ def test_backup_restore_preserves_safety_copy(tmp_path: Path):
     assert list((tmp_path / "backups").glob("*_before_restore.db"))
 
 
+def test_restore_removes_stale_wal_sidecars(tmp_path: Path):
+    db = Database(tmp_path / "restaurant.db")
+    state = db.load()
+    state["settings"]["storeName"] = "正确备份"
+    db.save(state)
+    backup = db.backup(tmp_path / "backups")
+
+    wal = Path(str(db.path) + "-wal")
+    shm = Path(str(db.path) + "-shm")
+    wal.write_bytes(b"stale-wal")
+    shm.write_bytes(b"stale-shm")
+
+    db.restore(backup)
+    assert db.load()["settings"]["storeName"] == "正确备份"
+    assert not wal.exists()
+    assert not shm.exists()
+
+
 def test_frontend_save_cannot_clear_password_hash(tmp_path: Path):
     db = Database(tmp_path / "restaurant.db")
     state = db.load()
