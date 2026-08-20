@@ -6,6 +6,7 @@ import logging
 
 from .paths import data_dir, log_file
 from .server import start_server
+from .migration_routes import install_migration_routes
 from .version import APP_NAME, APP_VERSION
 
 
@@ -29,6 +30,7 @@ def compatibility_environment() -> None:
 def main() -> int:
     configure_logging()
     compatibility_environment()
+    install_migration_routes()
     logging.info("Starting %s %s", APP_NAME, APP_VERSION)
     from PyQt5.QtCore import QUrl
     from PyQt5.QtCore import Qt, QTimer
