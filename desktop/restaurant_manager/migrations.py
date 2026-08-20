@@ -38,6 +38,16 @@ def default_state() -> Dict[str, Any]:
             "backupDir": "",
             "backupTime": "08:00",
             "backupKeepDays": 30,
+            "autoLockMinutes": 15,
+            "appName": "餐馆经营管理系统",
+            "windowTitle": "餐馆经营管理系统",
+            "logoDataUrl": "",
+            "desktopShortcutName": "餐馆经营管理系统",
+            "desktopIconDataUrl": "",
+            "autoCheckUpdates": True,
+            "lastUpdateCheckAt": "",
+            "latestKnownVersion": "",
+            "latestReleaseUrl": "",
             "lastAutoBackupDate": "",
             "createdAt": today,
         },
@@ -48,6 +58,9 @@ def migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
     base = default_state()
     for key, value in base.items():
         state.setdefault(key, value)
+    settings = state.setdefault("settings", {})
+    for key, value in base["settings"].items():
+        settings.setdefault(key, value)
     version = int(state.get("schemaVersion", 1))
     if version < 2:
         if "income" in state and not state.get("incomeRecords"):

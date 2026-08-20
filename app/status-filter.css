@@ -2,4 +2,4 @@
 .recent-head-actions label{display:flex;flex-direction:column;gap:5px;color:#68778a;font-size:12px}
 .recent-head-actions select{min-width:105px;padding:6px 9px}
 @media(max-width:760px){.recent-head-actions{width:100%;align-items:flex-end;justify-content:space-between}}
-.local-version{margin-top:5px;padding-top:8px;border-top:1px solid #ffffff12;display:flex;justify-content:space-between}.local-version strong{color:#a9b9cc;font-weight:600}
+.local-version{margin-top:5px;padding-top:8px;border-top:1px solid #ffffff12;display:flex;align-items:center;justify-content:space-between;gap:6px}.local-version strong{color:#a9b9cc;font-weight:600}.local-version button{border:0;background:transparent;color:#79d6bd;padding:0;font:inherit;cursor:pointer;white-space:nowrap}.local-version button:hover{color:#a1ead6}

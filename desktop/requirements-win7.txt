@@ -2,5 +2,7 @@
 PyQt5==5.15.9
 PyQtWebEngine==5.15.6
 openpyxl==3.1.5
+Pillow==10.4.0
+certifi==2025.8.3
 pyinstaller==5.13.2
 pytest==8.3.5

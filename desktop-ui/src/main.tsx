@@ -14,5 +14,6 @@ import "../../app/category-dialog.css";
 import "../../app/import-ui.css";
 import "../../app/status-filter.css";
 import "../../app/lock-screen.css";
+import "../../app/branding.css";
 
 createRoot(document.getElementById("root")!).render(<React.StrictMode><Home/></React.StrictMode>);

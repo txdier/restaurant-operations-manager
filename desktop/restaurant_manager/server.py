@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
 import logging
 import mimetypes
@@ -9,6 +10,8 @@ import secrets
 import subprocess
 import threading
 import urllib.parse
+import urllib.request
+import ssl
 from datetime import date, datetime, timedelta
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -18,7 +21,7 @@ from typing import Any, Dict, Tuple
 from .database import Database
 from .exporter import export_csv_zip, export_xlsx
 from .importer import apply_import, create_import_template, preview_import
-from .paths import data_dir, default_backup_dir, log_file, web_dir
+from .paths import data_dir, default_backup_dir, install_dir, log_file, web_dir
 from .security import hash_password, verify_password
 from .version import APP_NAME, APP_VERSION, DATA_SCHEMA_VERSION
 
@@ -34,10 +37,65 @@ STATIC_CONTENT_TYPES = {
     ".woff": "font/woff",
     ".woff2": "font/woff2",
 }
+UPDATE_API_URL = "https://api.github.com/repos/txdier/restaurant-operations-manager/releases/latest"
+UPDATE_RELEASE_PREFIX = "https://github.com/txdier/restaurant-operations-manager/releases/"
 
 
 def static_content_type(path: Path) -> str:
     return STATIC_CONTENT_TYPES.get(path.suffix.lower(), mimetypes.guess_type(path.name)[0] or "application/octet-stream")
+
+
+def logo_data_url(path: Path) -> str:
+    mime = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}.get(path.suffix.lower())
+    if not mime or not path.is_file():
+        raise ValueError("请选择有效的 PNG 或 JPG 图片")
+    data = path.read_bytes()
+    if len(data) > 1024 * 1024:
+        raise ValueError("Logo 图片不能超过 1 MB")
+    return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+
+
+def version_tuple(value: str) -> Tuple[int, ...]:
+    clean = value.strip().lower().lstrip("v")
+    parts = clean.split(".")
+    if not parts or any(not part.isdigit() for part in parts):
+        raise ValueError(f"无法识别版本号：{value}")
+    return tuple(int(part) for part in parts)
+
+
+def release_update_info(payload: Dict[str, Any], current_version: str = APP_VERSION) -> Dict[str, Any]:
+    latest = str(payload.get("tag_name", "")).lstrip("v")
+    release_url = str(payload.get("html_url", ""))
+    if not latest or not release_url.startswith(UPDATE_RELEASE_PREFIX):
+        raise ValueError("更新服务器返回了无效的版本信息")
+    return {
+        "currentVersion": current_version,
+        "latestVersion": latest,
+        "hasUpdate": version_tuple(latest) > version_tuple(current_version),
+        "releaseUrl": release_url,
+        "releaseName": str(payload.get("name", "")),
+        "publishedAt": str(payload.get("published_at", "")),
+    }
+
+
+def safe_shortcut_name(value: str) -> str:
+    invalid = '<>:"/\\|?*'
+    cleaned = " ".join("".join(" " if char in invalid or ord(char) < 32 else char for char in value).split()).rstrip(".")
+    return cleaned[:60] or APP_NAME
+
+
+def icon_data_url_to_ico(data_url: str, target: Path) -> None:
+    try:
+        _, encoded = data_url.split(",", 1)
+        image_bytes = base64.b64decode(encoded, validate=True)
+        if len(image_bytes) > 1024 * 1024:
+            raise ValueError("桌面图标图片不能超过 1 MB")
+        from PIL import Image
+
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            image.convert("RGBA").save(target, format="ICO", sizes=[(16, 16), (32, 32), (48, 48), (256, 256)])
+    except Exception as error:
+        raise ValueError(f"无法生成桌面图标：{error}") from error
 
 
 def windows_dialog(script: str) -> str:
@@ -89,6 +147,68 @@ class DesktopService:
         for item in self._backup_dir(state).glob("restaurant_*.db"):
             if datetime.fromtimestamp(item.stat().st_mtime) < cutoff:
                 item.unlink(missing_ok=True)
+
+    def check_for_updates(self) -> Dict[str, Any]:
+        import certifi
+
+        request = urllib.request.Request(
+            UPDATE_API_URL,
+            headers={"Accept": "application/vnd.github+json", "User-Agent": f"RestaurantManager/{APP_VERSION}"},
+        )
+        context = ssl.create_default_context()
+        context.load_verify_locations(cafile=certifi.where())
+        with urllib.request.urlopen(request, timeout=8, context=context) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        return release_update_info(payload)
+
+    def sync_desktop_shortcut(self, overrides: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        if os.name != "nt":
+            raise ValueError("桌面快捷方式设置仅在 Windows 桌面版中可用")
+        settings = dict(self.database.load().get("settings", {}))
+        settings.update(overrides or {})
+        name = safe_shortcut_name(str(settings.get("desktopShortcutName") or settings.get("appName") or APP_NAME))
+        icon_data = str(settings.get("desktopIconDataUrl") or settings.get("logoDataUrl") or "")
+        branding = data_dir() / "branding"
+        branding.mkdir(parents=True, exist_ok=True)
+        icon_path = branding / "desktop-icon.ico"
+        if icon_data:
+            icon_data_url_to_ico(icon_data, icon_path)
+        else:
+            icon_path.unlink(missing_ok=True)
+        config_path = branding / "shortcut.json"
+        previous = APP_NAME
+        if config_path.exists():
+            try:
+                previous = safe_shortcut_name(str(json.loads(config_path.read_text(encoding="utf-8")).get("name", APP_NAME)))
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                previous = APP_NAME
+        executable = install_dir() / "RestaurantManager.exe"
+        config = {
+            "name": name,
+            "previous": previous,
+            "defaultName": APP_NAME,
+            "target": str(executable),
+            "workingDirectory": str(executable.parent),
+            "icon": str(icon_path if icon_path.exists() else executable),
+        }
+        encoded_config = base64.b64encode(json.dumps(config, ensure_ascii=False).encode("utf-8")).decode("ascii")
+        script = (
+            f"$c=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{encoded_config}'))|ConvertFrom-Json;"
+            "$desktop=[Environment]::GetFolderPath('Desktop');"
+            "$old=Join-Path $desktop ($c.previous+'.lnk');$new=Join-Path $desktop ($c.name+'.lnk');"
+            "$default=Join-Path $desktop ($c.defaultName+'.lnk');"
+            "if($old -ne $new -and (Test-Path -LiteralPath $old)){Remove-Item -LiteralPath $old -Force};"
+            "if($default -ne $new -and (Test-Path -LiteralPath $default)){Remove-Item -LiteralPath $default -Force};"
+            "$shell=New-Object -ComObject WScript.Shell;$link=$shell.CreateShortcut($new);"
+            "$link.TargetPath=$c.target;$link.WorkingDirectory=$c.workingDirectory;"
+            "$link.IconLocation=$c.icon+',0';$link.Save()"
+        )
+        subprocess.check_call(
+            ["powershell.exe", "-STA", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+            creationflags=0x08000000,
+        )
+        config_path.write_text(json.dumps({"name": name}, ensure_ascii=False, indent=2), encoding="utf-8")
+        return {"name": name, "icon": str(icon_path) if icon_path.exists() else ""}
 
     def backup_list(self) -> list[Dict[str, Any]]:
         root = self._backup_dir()
@@ -166,6 +286,8 @@ class ApiHandler(BaseHTTPRequestHandler):
                     return self._json({"ok": True, "appName": APP_NAME, "version": APP_VERSION, "schemaVersion": DATA_SCHEMA_VERSION, "dataDir": str(data_dir()), "backupDir": str(self.service._backup_dir())})
                 if parsed.path == "/api/backups":
                     return self._json({"ok": True, "items": self.service.backup_list()})
+                if parsed.path == "/api/update/check":
+                    return self._json({"ok": True, **self.service.check_for_updates()})
                 return self._json({"ok": False, "error": "not found"}, HTTPStatus.NOT_FOUND)
             except Exception as error:
                 return self._api_error(error)
@@ -255,6 +377,30 @@ class ApiHandler(BaseHTTPRequestHandler):
                     "$d.Dispose();$owner.Dispose()"
                 )
                 return self._json({"ok": True, "path": selected})
+            if self.path == "/api/select-logo":
+                dialog_title = "选择桌面图标图片" if body.get("purpose") == "desktop" else "选择软件 Logo"
+                selected = windows_dialog(
+                    "$d=New-Object System.Windows.Forms.OpenFileDialog;"
+                    f"$d.Title='{dialog_title}';"
+                    "$d.Filter='图片文件 (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg';$d.Multiselect=$false;"
+                    "if($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK){$result=$d.FileName};"
+                    "$d.Dispose();$owner.Dispose()"
+                )
+                return self._json({"ok": True, "dataUrl": logo_data_url(Path(selected)) if selected else ""})
+            if self.path == "/api/shortcut/sync":
+                result = self.service.sync_desktop_shortcut({
+                    "desktopShortcutName": body.get("name", ""),
+                    "desktopIconDataUrl": body.get("iconDataUrl", ""),
+                    "logoDataUrl": body.get("logoDataUrl", ""),
+                    "appName": body.get("appName", ""),
+                })
+                return self._json({"ok": True, **result})
+            if self.path == "/api/update/open":
+                url = str(body.get("url", ""))
+                if not url.startswith(UPDATE_RELEASE_PREFIX):
+                    raise ValueError("只能打开本程序的 GitHub 更新页面")
+                os.startfile(url)  # type: ignore[attr-defined]
+                return self._json({"ok": True})
             if self.path == "/api/select-directory":
                 selected = windows_dialog(
                     "$d=New-Object System.Windows.Forms.FolderBrowserDialog;"

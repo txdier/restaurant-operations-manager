@@ -4,7 +4,7 @@ import os
 import sys
 import logging
 
-from .paths import log_file
+from .paths import data_dir, log_file
 from .server import start_server
 from .version import APP_NAME, APP_VERSION
 
@@ -32,6 +32,7 @@ def main() -> int:
     logging.info("Starting %s %s", APP_NAME, APP_VERSION)
     from PyQt5.QtCore import QUrl
     from PyQt5.QtCore import Qt, QTimer
+    from PyQt5.QtGui import QIcon
     from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineView
     from PyQt5.QtWidgets import QApplication, QMainWindow
 
@@ -45,8 +46,16 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     server, url = start_server()
+    branding_settings = server.service.database.load().get("settings", {})
+    display_name = str(branding_settings.get("appName") or APP_NAME).strip() or APP_NAME
+    window_title = str(branding_settings.get("windowTitle") or display_name).strip() or display_name
+    app.setApplicationDisplayName(display_name)
     window = QMainWindow()
-    window.setWindowTitle(APP_NAME)
+    window.setWindowTitle(window_title)
+    custom_icon = data_dir() / "branding" / "desktop-icon.ico"
+    if custom_icon.exists():
+        app.setWindowIcon(QIcon(str(custom_icon)))
+        window.setWindowIcon(QIcon(str(custom_icon)))
     window.resize(1440, 900)
     window.setMinimumSize(1024, 700)
     view = QWebEngineView(window)
@@ -54,9 +63,21 @@ def main() -> int:
     view.loadStarted.connect(lambda: logging.info("Desktop UI load started: %s", url))
     view.loadProgress.connect(lambda progress: logging.info("Desktop UI load progress: %s%%", progress))
     view.loadFinished.connect(lambda ok: logging.info("Desktop UI load finished: success=%s url=%s", ok, view.url().toString()))
+    view.titleChanged.connect(window.setWindowTitle)
     view.setUrl(QUrl(url))
     window.setCentralWidget(view)
     window.show()
+    def sync_branding() -> None:
+        try:
+            result = server.service.sync_desktop_shortcut()
+            if result.get("icon"):
+                icon = QIcon(str(result["icon"]))
+                app.setWindowIcon(icon)
+                window.setWindowIcon(icon)
+        except Exception:
+            logging.exception("Could not synchronize the customized desktop shortcut")
+
+    QTimer.singleShot(1500, sync_branding)
     backup_timer = QTimer(window)
     backup_timer.timeout.connect(server.service.maybe_auto_backup)
     backup_timer.start(60_000)

@@ -3,7 +3,7 @@ import sqlite3
 from pathlib import Path
 
 from restaurant_manager.database import Database
-from restaurant_manager.migrations import DATA_SCHEMA_VERSION
+from restaurant_manager.migrations import DATA_SCHEMA_VERSION, migrate_state
 
 
 def test_database_initializes_and_round_trips(tmp_path: Path):
@@ -50,3 +50,13 @@ def test_frontend_save_cannot_clear_password_hash(tmp_path: Path):
     del visible["settings"]["passwordHash"]
     db.save(visible)
     assert db.load()["settings"]["passwordHash"] == "protected-value"
+
+
+def test_existing_state_gets_default_auto_lock_timeout():
+    state = migrate_state({"schemaVersion": 4, "settings": {"storeName": "旧门店"}})
+
+    assert state["settings"]["storeName"] == "旧门店"
+    assert state["settings"]["autoLockMinutes"] == 15
+    assert state["settings"]["appName"] == "餐馆经营管理系统"
+    assert state["settings"]["desktopShortcutName"] == "餐馆经营管理系统"
+    assert state["settings"]["autoCheckUpdates"] is True

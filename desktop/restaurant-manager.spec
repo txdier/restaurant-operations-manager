@@ -12,7 +12,7 @@ a = Analysis(
         (str(desktop / "restaurant_manager/web"), "restaurant_manager/web"),
         (str(desktop / "app-manifest.json"), "."),
     ],
-    hiddenimports=["PyQt5.QtWebEngineWidgets", "openpyxl"],
+    hiddenimports=["PyQt5.QtWebEngineWidgets", "openpyxl", "PIL.Image", "certifi"],
 )
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="RestaurantManager", console=False, icon=None)
