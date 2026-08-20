@@ -2,6 +2,8 @@ from pathlib import Path
 
 import base64
 import io
+import json
+import re
 
 import pytest
 
@@ -14,6 +16,7 @@ from restaurant_manager.server import (
     safe_shortcut_name,
     static_content_type,
 )
+from restaurant_manager.version import APP_VERSION
 
 
 def test_javascript_uses_module_compatible_content_type():
@@ -64,3 +67,21 @@ def test_logo_can_be_converted_to_windows_icon(tmp_path: Path):
 
     assert target.exists()
     assert target.stat().st_size > 0
+
+
+def test_installer_does_not_create_default_desktop_shortcut():
+    root = Path(__file__).resolve().parents[2]
+    installer = (root / "desktop" / "installer.iss").read_text(encoding="utf-8")
+
+    assert "{autodesktop}" not in installer.lower()
+    assert 'Name: "desktopicon"' not in installer
+
+
+def test_desktop_versions_stay_aligned():
+    root = Path(__file__).resolve().parents[2]
+    manifest = json.loads((root / "desktop" / "app-manifest.json").read_text(encoding="utf-8"))
+    installer = (root / "desktop" / "installer.iss").read_text(encoding="utf-8")
+    match = re.search(r'#define MyAppVersion "([^"]+)"', installer)
+
+    assert match is not None
+    assert manifest["version"] == APP_VERSION == match.group(1)
