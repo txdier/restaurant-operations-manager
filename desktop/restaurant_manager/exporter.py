@@ -13,6 +13,24 @@ def _in_range(row: Dict[str, Any], start: str, end: str) -> bool:
     return (not start or value >= start) and (not end or value <= end)
 
 
+def _income_export_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    dine_in = float(row.get("dineIn", float(row.get("hall", 0) or 0) + float(row.get("room", 0) or 0)) or 0)
+    chess = float(row.get("chess", 0) or 0)
+    delivery = float(row.get("delivery", 0) or 0)
+    date_value = str(row.get("date", ""))
+    return {
+        "记账日期": date_value,
+        "录入方式": "按周期" if row.get("entryMode") == "period" else "按日",
+        "周期开始": row.get("periodStart") or date_value,
+        "周期结束": row.get("periodEnd") or date_value,
+        "堂食": dine_in,
+        "棋牌房": chess,
+        "外送": delivery,
+        "合计": dine_in + chess + delivery,
+        "备注": row.get("note", ""),
+    }
+
+
 def datasets(state: Dict[str, Any], start: str = "", end: str = "") -> Dict[str, List[Dict[str, Any]]]:
     names = ["incomeRecords", "salesRecords", "expenses", "products", "stocktakes", "reminders", "employees", "payrolls", "suppliers", "assets"]
     result: Dict[str, List[Dict[str, Any]]] = {}
@@ -20,6 +38,8 @@ def datasets(state: Dict[str, Any], start: str = "", end: str = "") -> Dict[str,
         rows = list(state.get(name, []))
         if start or end:
             rows = [row for row in rows if not ("date" in row or "month" in row) or _in_range(row, start, end)]
+        if name == "incomeRecords":
+            rows = [_income_export_row(row) for row in rows]
         result[name] = rows
     return result
 

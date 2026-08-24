@@ -23,6 +23,10 @@ def test_old_state_is_migrated(tmp_path: Path):
     state = Database(path).load()
     assert state["schemaVersion"] == DATA_SCHEMA_VERSION
     assert state["incomeRecords"][0]["hall"] == 10
+    assert state["incomeRecords"][0]["dineIn"] == 10
+    assert state["incomeRecords"][0]["entryMode"] == "day"
+    assert state["incomeRecords"][0]["periodStart"] == "2026-01-01"
+    assert state["incomeRecords"][0]["periodEnd"] == "2026-01-01"
     assert state["expenseCategories"]
     assert state["importBatches"] == []
     assert list((tmp_path / "backups").glob("*_before_schema_v1_to_v*.db"))

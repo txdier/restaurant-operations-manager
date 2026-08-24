@@ -10,7 +10,7 @@
 desktop\build_windows.bat
 ```
 
-当前版本输出：`release\RestaurantManager-Setup-1.0.9.exe`。
+当前版本输出：`release\RestaurantManager-Setup-1.0.12.exe`。
 
 ## 更新检测
 

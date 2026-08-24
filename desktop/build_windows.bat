@@ -18,6 +18,8 @@ if errorlevel 1 exit /b 1
 
 call npm ci
 if errorlevel 1 exit /b 1
+node --test tests\income-records.test.mjs
+if errorlevel 1 exit /b 1
 call npm run desktop:build
 if errorlevel 1 exit /b 1
 node desktop\check_web_compat.mjs

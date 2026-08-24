@@ -80,6 +80,23 @@ def migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
         state.setdefault("expenseCategories", base["expenseCategories"])
         state.setdefault("importBatches", [])
         version = 4
+    if version < 5:
+        used_ids = {int(income["id"]) for income in state.get("incomeRecords", []) if income.get("id") is not None}
+        next_id = max(used_ids, default=0) + 1
+        for income in state.get("incomeRecords", []):
+            if income.get("id") is None:
+                while next_id in used_ids:
+                    next_id += 1
+                income["id"] = next_id
+                used_ids.add(next_id)
+                next_id += 1
+            income.setdefault("entryMode", "day")
+            income.setdefault("periodStart", income.get("date", ""))
+            income.setdefault("periodEnd", income.get("date", ""))
+            # Keep hall/room as the historical source breakdown. New records
+            # use dineIn while reports normalize both storage formats.
+            income.setdefault("dineIn", float(income.get("hall", 0) or 0) + float(income.get("room", 0) or 0))
+        version = 5
     state["schemaVersion"] = DATA_SCHEMA_VERSION
     return state
 
