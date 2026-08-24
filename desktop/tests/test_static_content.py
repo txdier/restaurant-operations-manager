@@ -152,3 +152,16 @@ def test_data_exchange_is_combined_and_navigation_labels_use_four_characters():
     assert 'items={[["import","数据导入"],["export","数据导出"]]}' in page
     assert 'hidden={tab!=="import"}' in page and 'hidden={tab!=="export"}' in page
     assert 'if(active==="data")return <DataExchange' in page
+
+
+def test_query_export_uses_desktop_save_dialog_and_print_action_is_removed():
+    root = Path(__file__).resolve().parents[2]
+    page = (root / "app" / "page.tsx").read_text(encoding="utf-8")
+    server = (root / "desktop" / "restaurant_manager" / "server.py").read_text(encoding="utf-8")
+    reports = page[page.index("function ReportsReal("):page.index("function DataExchange(")]
+
+    assert 'desktopRequest<{path:string;cancelled?:boolean}>("export-query"' in reports
+    assert "window.print" not in reports and "打印当前结果" not in reports
+    assert 'exporting?"正在导出…":"⇩ 导出查询结果"' in reports
+    assert 'if self.path == "/api/export-query":' in server
+    assert "SaveFileDialog" in server

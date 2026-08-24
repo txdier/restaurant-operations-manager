@@ -3,7 +3,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from restaurant_manager.exporter import datasets, export_csv_zip, export_xlsx
+from restaurant_manager.exporter import datasets, export_csv_zip, export_query_csv, export_xlsx
 from restaurant_manager.migrations import default_state
 
 
@@ -33,3 +33,17 @@ def test_period_income_export_uses_period_end_as_accounting_date():
     state["incomeRecords"] = [{"id": 2, "date": "2026-09-01", "entryMode": "period", "periodStart": "2026-08-26", "periodEnd": "2026-09-01", "dineIn": 20000, "chess": 0, "delivery": 0}]
     assert datasets(state, "2026-09-01", "2026-09-30")["incomeRecords"][0]["录入方式"] == "按周期"
     assert datasets(state, "2026-08-01", "2026-08-31")["incomeRecords"] == []
+
+
+def test_query_csv_export_writes_utf8_bom_and_quoted_content(tmp_path: Path):
+    target = export_query_csv(
+        ["日期", "项目", "金额"],
+        [["2026-08-24", '米油,含"税"', 128.5]],
+        tmp_path / "query.csv",
+    )
+
+    raw = target.read_bytes()
+    assert raw.startswith(b"\xef\xbb\xbf")
+    text = raw.decode("utf-8-sig")
+    assert "日期,项目,金额" in text
+    assert '"米油,含""税"""' in text

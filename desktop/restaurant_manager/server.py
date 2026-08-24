@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Dict, Tuple
 
 from .database import Database
-from .exporter import export_csv_zip, export_xlsx
+from .exporter import export_csv_zip, export_query_csv, export_xlsx
 from .importer import apply_import, create_import_template, preview_import
 from .paths import data_dir, default_backup_dir, install_dir, log_file, web_dir
 from .security import hash_password, verify_password
@@ -342,6 +342,28 @@ class ApiHandler(BaseHTTPRequestHandler):
                     return self._json({"ok": True, "path": "", "cancelled": True})
                 target = Path(selected)
                 (export_xlsx if kind == "xlsx" else export_csv_zip)(state, target, start, end)
+                return self._json({"ok": True, "path": str(target)})
+            if self.path == "/api/export-query":
+                headers, rows = body.get("headers"), body.get("rows")
+                if not isinstance(headers, list) or not headers or len(headers) > 64:
+                    raise ValueError("查询结果字段无效")
+                if not isinstance(rows, list) or len(rows) > 100000:
+                    raise ValueError("查询结果数量无效或超过 100000 条")
+                if any(not isinstance(row, list) or len(row) != len(headers) for row in rows):
+                    raise ValueError("查询结果字段数量不一致")
+                requested_name = str(body.get("name", "查询结果"))
+                safe_name = "".join(char for char in requested_name if char.isalnum() or char in " _-").strip()[:80] or "查询结果"
+                selected = windows_dialog(
+                    "$d=New-Object System.Windows.Forms.SaveFileDialog;"
+                    "$d.Title='导出当前查询结果';"
+                    "$d.Filter='CSV 文件 (*.csv)|*.csv';$d.DefaultExt='csv';$d.AddExtension=$true;"
+                    f"$d.FileName='{safe_name}.csv';"
+                    "if($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK){$result=$d.FileName};"
+                    "$d.Dispose();$owner.Dispose()"
+                )
+                if not selected:
+                    return self._json({"ok": True, "path": "", "cancelled": True})
+                target = export_query_csv(headers, rows, Path(selected))
                 return self._json({"ok": True, "path": str(target)})
             if self.path == "/api/import/template":
                 selected = windows_dialog(

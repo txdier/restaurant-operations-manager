@@ -63,6 +63,21 @@ def export_csv_zip(state: Dict[str, Any], target: Path, start: str = "", end: st
     return target
 
 
+def export_query_csv(headers: Iterable[Any], rows: Iterable[Iterable[Any]], target: Path) -> Path:
+    columns = [str(value) for value in headers]
+    if not columns:
+        raise ValueError("导出字段不能为空")
+    with target.open("w", newline="", encoding="utf-8-sig") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(columns)
+        for row in rows:
+            values = list(row)
+            if len(values) != len(columns):
+                raise ValueError("查询结果字段数量不一致")
+            writer.writerow(json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else value for value in values)
+    return target
+
+
 def export_xlsx(state: Dict[str, Any], target: Path, start: str = "", end: str = "") -> Path:
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
