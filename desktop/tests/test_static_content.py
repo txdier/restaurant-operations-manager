@@ -137,3 +137,18 @@ def test_expense_categories_are_managed_in_settings_and_redundant_nav_items_are_
     assert "expenseDialog&&" in settings_source
     assert "管理支出分类" in settings_source
     assert "已有支出继续保留录入时的分类名称" in settings_source
+
+
+def test_data_exchange_is_combined_and_navigation_labels_use_four_characters():
+    root = Path(__file__).resolve().parents[2]
+    page = (root / "app" / "page.tsx").read_text(encoding="utf-8")
+    nav_source = page[page.index("const nav:"):page.index("const initialExpenses")]
+    labels = re.findall(r'\["[^"]+","[^"]+","([^"]+)"\]', nav_source)
+
+    assert labels and all(len(label) == 4 for label in labels)
+    assert "数据交换" in labels
+    assert "数据导入" not in labels and "数据导出" not in labels
+    assert "function DataExchange" in page
+    assert 'items={[["import","数据导入"],["export","数据导出"]]}' in page
+    assert 'hidden={tab!=="import"}' in page and 'hidden={tab!=="export"}' in page
+    assert 'if(active==="data")return <DataExchange' in page

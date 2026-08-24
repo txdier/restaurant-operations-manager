@@ -15,7 +15,7 @@ function detectView():ActiveView{
  const button=document.querySelector(".side nav button.active") as HTMLButtonElement|null;
  const title=button?.getAttribute("title")||button?.textContent||"";
  if(title.includes("装修置物")||title.includes("资产与设备"))return "assets";
- if(title.includes("备份恢复")||title.includes("备份与恢复")||title.includes("备份与迁移"))return "backup";
+ if(title.includes("备份迁移")||title.includes("备份恢复")||title.includes("备份与恢复")||title.includes("备份与迁移"))return "backup";
  if(title.includes("数据导入")||title.includes("业务数据导入"))return "import";
  if(title.includes("数据导出")||title.includes("业务数据导出"))return "export";
  return "";
@@ -34,9 +34,7 @@ function renameNavItem(oldLabel:string,newLabel:string){
 
 function normalizeNavigation(){
  renameNavItem("装修置物","资产与设备");
- renameNavItem("数据导入","业务数据导入");
- renameNavItem("数据导出","业务数据导出");
- renameNavItem("备份恢复","备份与迁移");
+ renameNavItem("备份恢复","备份迁移");
 }
 
 function normalizeDataCopy(view:ActiveView){
@@ -46,7 +44,7 @@ function normalizeDataCopy(view:ActiveView){
  if(view==="import"&&head){
   const h=head.querySelector("h1"),p=head.querySelector("p");
   if(h)h.textContent="业务数据导入";
-  if(p)p.textContent="通过 Excel 批量导入快速支出和详细采购；完整系统迁移请到“备份与迁移”";
+  if(p)p.textContent="通过 Excel 批量导入快速支出和详细采购；完整系统迁移请到“备份迁移”";
  }
  if(view==="export"&&head){
   const h=head.querySelector("h1"),p=head.querySelector("p");
@@ -101,14 +99,14 @@ function UnifiedAssetView(){
  const rows=useMemo(()=>expenses.filter((row)=>classify(row.category)===tab&&(status==="全部"||row.status===status)),[expenses,tab,status]);
  const legacyRows=legacy.filter((row)=>row.type===tab),total=rows.filter((row)=>row.status==="有效").reduce((sum,row)=>sum+Number(row.amount||0),0);
  return <div className="runtime-assets-view">
-  <div className="head"><div><h1>资产与设备</h1><p>装修和设备信息直接来自采购与支出，避免同一笔费用重复录入</p></div><div><button className="btn" onClick={()=>goTo("采购与支出")}>＋ 前往采购与支出录入</button></div></div>
+  <div className="head"><div><h1>资产与设备</h1><p>装修和设备信息直接来自采购支出，避免同一笔费用重复录入</p></div><div><button className="btn" onClick={()=>goTo("采购支出")}>＋ 前往采购支出录入</button></div></div>
   <div className="tabs enhanced-tabs"><button className={tab==="asset"?"on":""} onClick={()=>setTab("asset")}>设备与置物</button><button className={tab==="reno"?"on":""} onClick={()=>setTab("reno")}>装修支出</button></div>
-  <div className="panel asset-source-notice"><div><b>统一数据来源</b><span>本页不再单独新增账目。类别名称包含“装修”时归入装修支出；包含“设备 / 置物 / 资产”时归入设备与置物。修改、作废或导入支出后，这里会自动同步。</span></div><button className="link" onClick={()=>goTo("采购与支出")}>去录入支出 →</button></div>
+  <div className="panel asset-source-notice"><div><b>统一数据来源</b><span>本页不再单独新增账目。类别名称包含“装修”时归入装修支出；包含“设备 / 置物 / 资产”时归入设备与置物。修改、作废或导入支出后，这里会自动同步。</span></div><button className="link" onClick={()=>goTo("采购支出")}>去录入支出 →</button></div>
   {error&&<div className="warn runtime-error">{error}</div>}
-  <div className="report asset-summary"><div><span>当前分类记录</span><b>{rows.length} 笔</b></div><div><span>有效支出合计</span><b>{money(total)}</b></div><div><span>数据来源</span><b>采购与支出</b></div><div><span>历史手工记录</span><b>{legacyRows.length} 条</b></div></div>
+  <div className="report asset-summary"><div><span>当前分类记录</span><b>{rows.length} 笔</b></div><div><span>有效支出合计</span><b>{money(total)}</b></div><div><span>数据来源</span><b>采购支出</b></div><div><span>历史手工记录</span><b>{legacyRows.length} 条</b></div></div>
   <div className="filters asset-filters"><label>状态<select value={status} onChange={(e)=>setStatus(e.target.value)}><option>有效</option><option>已作废</option><option>全部</option></select></label><span className="info">这里是业务视图，不产生第二份支出数据。</span></div>
-  <div className="panel"><table><thead><tr><th>日期</th><th>类别</th><th>项目 / 备注</th><th>金额</th><th>经手人</th><th>状态</th><th>来源</th></tr></thead><tbody>{rows.map((row)=><tr key={String(row.id)} className={row.status!=="有效"?"void":""}><td>{row.date}</td><td>{row.category}</td><td><b>{row.item}</b></td><td><b>{money(row.amount)}</b></td><td>{row.handler}</td><td><span className="tag">{row.status}</span></td><td><span className="yes">采购与支出</span></td></tr>)}</tbody></table>{!rows.length&&<div className="empty-state">暂无匹配的{tab==="asset"?"设备与置物":"装修"}支出。请在“采购与支出”中选择对应类别录入。</div>}</div>
-  {legacyRows.length>0&&<article className="panel legacy-assets"><div className="pt"><b>历史手工记录</b><span>旧版本兼容，只读保留</span></div><div className="legacy-assets-note">这些记录来自旧版“装修置物”的独立录入。为避免与支出账重复，本版本不再允许在此新增或修改；后续统一在“采购与支出”记录。</div><table><thead><tr><th>名称</th><th>数量</th><th>日期</th><th>金额</th><th>状态</th><th>备注</th></tr></thead><tbody>{legacyRows.map((row)=><tr key={String(row.id)}><td><b>{row.name}</b></td><td>{row.qty} {row.unit}</td><td>{row.date}</td><td>{money(row.amount)}</td><td><span className="tag">{row.status}</span></td><td>{row.note}</td></tr>)}</tbody></table></article>}
+  <div className="panel"><table><thead><tr><th>日期</th><th>类别</th><th>项目 / 备注</th><th>金额</th><th>经手人</th><th>状态</th><th>来源</th></tr></thead><tbody>{rows.map((row)=><tr key={String(row.id)} className={row.status!=="有效"?"void":""}><td>{row.date}</td><td>{row.category}</td><td><b>{row.item}</b></td><td><b>{money(row.amount)}</b></td><td>{row.handler}</td><td><span className="tag">{row.status}</span></td><td><span className="yes">采购支出</span></td></tr>)}</tbody></table>{!rows.length&&<div className="empty-state">暂无匹配的{tab==="asset"?"设备与置物":"装修"}支出。请在“采购支出”中选择对应类别录入。</div>}</div>
+  {legacyRows.length>0&&<article className="panel legacy-assets"><div className="pt"><b>历史手工记录</b><span>旧版本兼容，只读保留</span></div><div className="legacy-assets-note">这些记录来自旧版“装修置物”的独立录入。为避免与支出账重复，本版本不再允许在此新增或修改；后续统一在“采购支出”记录。</div><table><thead><tr><th>名称</th><th>数量</th><th>日期</th><th>金额</th><th>状态</th><th>备注</th></tr></thead><tbody>{legacyRows.map((row)=><tr key={String(row.id)}><td><b>{row.name}</b></td><td>{row.qty} {row.unit}</td><td>{row.date}</td><td>{money(row.amount)}</td><td><span className="tag">{row.status}</span></td><td>{row.note}</td></tr>)}</tbody></table></article>}
  </div>
 }
 

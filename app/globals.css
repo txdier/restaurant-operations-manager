@@ -28,3 +28,9 @@
 .income-save-bar b{color:#243148}.income-save-bar .btn{min-width:112px}
 @media(max-width:760px){.report-pagination{align-items:flex-start;flex-direction:column}.report-pagination>div{flex-wrap:wrap}.income-date-bar{align-items:stretch;flex-direction:column}.income-date-bar .info{align-self:stretch}.income-save-bar{align-items:stretch;flex-direction:column}.income-save-bar .btn{width:100%}}
 @media print{.report-pagination{display:none!important}}
+
+/* Combined data import/export workspace. */
+.data-exchange-pane[hidden]{display:none!important}
+.exchange-subhead{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:14px;padding:13px 16px;border:1px solid var(--line);border-radius:9px;background:#fff}
+.exchange-subhead>div{display:flex;flex-direction:column;gap:4px}.exchange-subhead span{color:#7b8798;font-size:12px}
+@media(max-width:760px){.exchange-subhead{align-items:stretch;flex-direction:column}.exchange-subhead .btn{width:100%}}
