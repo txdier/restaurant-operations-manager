@@ -122,3 +122,18 @@ def test_duplicate_import_details_are_collapsed_and_scrollable():
     assert 'showDuplicates&&<div className="duplicate-import-details"' in page
     assert "默认全部跳过" in page
     assert ".duplicate-import-table{max-height:360px;overflow:auto" in css
+
+
+def test_expense_categories_are_managed_in_settings_and_redundant_nav_items_are_removed():
+    root = Path(__file__).resolve().parents[2]
+    page = (root / "app" / "page.tsx").read_text(encoding="utf-8")
+    nav_source = page[page.index("const nav:"):page.index("const initialExpenses")]
+    settings_source = page[page.index("function SettingsReal("):]
+
+    assert '["expense-settings","≡","支出类别"]' not in nav_source
+    assert '["assets","♢","装修置物"]' not in nav_source
+    assert '<Panel title="支出分类"' in settings_source
+    assert "openExpenseCategories" in settings_source
+    assert "expenseDialog&&" in settings_source
+    assert "管理支出分类" in settings_source
+    assert "已有支出继续保留录入时的分类名称" in settings_source
