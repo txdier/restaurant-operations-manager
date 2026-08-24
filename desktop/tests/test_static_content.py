@@ -109,3 +109,15 @@ def test_income_save_action_is_inside_form_and_uses_legacy_safe_alignment():
     assert 'className="income-save-bar"' in income_source
     assert income_source.index('className="income-save-bar"') < income_source.rindex("保存收入")
     assert ".filters{align-items:flex-end}" in css
+
+
+def test_duplicate_import_details_are_collapsed_and_scrollable():
+    root = Path(__file__).resolve().parents[2]
+    page = (root / "app" / "page.tsx").read_text(encoding="utf-8")
+    css = (root / "app" / "import-ui.css").read_text(encoding="utf-8")
+
+    assert "[showDuplicates,setShowDuplicates]=useState(false)" in page
+    assert 'aria-expanded={showDuplicates}' in page
+    assert 'showDuplicates&&<div className="duplicate-import-details"' in page
+    assert "默认全部跳过" in page
+    assert ".duplicate-import-table{max-height:360px;overflow:auto" in css
