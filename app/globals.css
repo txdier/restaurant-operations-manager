@@ -11,3 +11,20 @@
 .date-calendar-head{display:grid;grid-template-columns:32px 1fr 32px;align-items:center;text-align:center;margin-bottom:8px}.date-calendar-head button{height:30px;border:0;border-radius:6px;background:transparent;color:#53657a;font-size:21px;cursor:pointer}.date-calendar-head button:hover{background:#eef6f3}.date-calendar-head b{font-size:13px}
 .date-weekdays,.date-days{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center}.date-weekdays span{padding:4px 0;color:#8995a5;font-size:11px}.date-days>span,.date-days button{height:28px}.date-days button{border:0;border-radius:6px;background:transparent;color:#34455a;font:inherit;font-size:12px;cursor:pointer}.date-days button:hover{background:#eaf7f2;color:#087d60}.date-days button.today{box-shadow:inset 0 0 0 1px #9fd7c6}.date-days button.selected{background:#10a77f;color:#fff;font-weight:700;box-shadow:none}
 .panel.form,.panel.entry,.global-export{overflow:visible}
+
+/* Query tables: sortable headers and compact pagination. */
+.report-table{table-layout:auto}
+.sort-button{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-width:72px;padding:0;border:0;background:transparent;color:inherit;font:inherit;font-weight:600;text-align:left;cursor:pointer}
+.sort-button span{color:#9aa5b3;font-size:12px}.sort-button.active{color:#087d60}.sort-button.active span{color:#0a9e75}
+.report-pagination{display:flex;align-items:center;justify-content:space-between;gap:18px;min-height:58px;padding:10px 16px;border-top:1px solid var(--line);background:#fbfcfe;color:#718096;font-size:12px}
+.report-pagination>div{display:flex;align-items:center;gap:7px}.report-pagination label{display:flex;align-items:center;gap:6px}.report-pagination select{height:32px;padding:4px 8px}.report-pagination button{height:32px;padding:0 10px;border:1px solid #dce3eb;border-radius:5px;background:#fff;color:#486079;cursor:pointer}.report-pagination button:hover:not(:disabled){border-color:#1ca985;color:#087d60}.report-pagination button:disabled{background:#f3f5f7;color:#adb5c0;cursor:not-allowed}.report-pagination b{min-width:82px;color:#425268;text-align:center}
+.report-empty{border-top:1px solid var(--line)}
+
+/* Income form: use legacy-WebView-safe alignment and keep the action near the last field. */
+.filters{align-items:flex-end}
+.income-date-bar .info{display:flex;align-items:center;align-self:flex-end;min-height:36px}
+.income-note{margin-bottom:18px}
+.income-save-bar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:18px -20px -20px;padding:14px 18px;border-top:1px solid var(--line);background:#f8fafc;color:#6c788a}
+.income-save-bar b{color:#243148}.income-save-bar .btn{min-width:112px}
+@media(max-width:760px){.report-pagination{align-items:flex-start;flex-direction:column}.report-pagination>div{flex-wrap:wrap}.income-date-bar{align-items:stretch;flex-direction:column}.income-date-bar .info{align-self:stretch}.income-save-bar{align-items:stretch;flex-direction:column}.income-save-bar .btn{width:100%}}
+@media print{.report-pagination{display:none!important}}

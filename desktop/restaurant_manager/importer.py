@@ -52,6 +52,16 @@ def _quick_key(row: Dict[str, Any]) -> tuple[str, str, int, str, str]:
     )
 
 
+def _quick_identity_key(row: Dict[str, Any]) -> tuple[str, int, str, str]:
+    """Match the same quick expense across legacy category/item layouts."""
+    return (
+        _text(row.get("date")),
+        _money_key(row.get("amount", 0)),
+        _text(row.get("handler")),
+        _text(row.get("note")) or _text(row.get("category")),
+    )
+
+
 def _expense_quick_key(expense: Dict[str, Any]) -> tuple[str, str, int, str, str] | None:
     if expense.get("purchaseNo") or _text(expense.get("mode")) == "详细采购":
         return None
@@ -70,6 +80,14 @@ def _expense_quick_key(expense: Dict[str, Any]) -> tuple[str, str, int, str, str
         )
     except (InvalidOperation, ValueError, TypeError):
         return None
+
+
+def _expense_quick_identity_key(expense: Dict[str, Any]) -> tuple[str, int, str, str] | None:
+    key = _expense_quick_key(expense)
+    if key is None:
+        return None
+    day, category, amount, handler, note = key
+    return day, amount, handler, note or category
 
 
 def create_import_template(target: Path) -> Path:
@@ -116,6 +134,9 @@ def preview_import(path: Path, state: Dict[str, Any]) -> Dict[str, Any]:
         units_by_name.setdefault(_text(product.get("name")), set()).add(_text(product.get("unit")))
     existing_orders = {_text(e.get("purchaseNo")) for e in state.get("expenses", []) if e.get("purchaseNo")}
     existing_quick = {key for expense in state.get("expenses", []) if (key := _expense_quick_key(expense)) is not None}
+    existing_quick_identities = {
+        key for expense in state.get("expenses", []) if (key := _expense_quick_identity_key(expense)) is not None
+    }
     errors: list[str] = []
     warnings: list[str] = []
     quick_rows: list[Dict[str, Any]] = []
@@ -143,8 +164,9 @@ def preview_import(path: Path, state: Dict[str, Any]) -> Dict[str, Any]:
                 raise ValueError(f"支出类别“{category}”不存在或已停用")
             row = {"date": day, "category": category, "amount": _number(values[2], "金额"), "handler": handler, "note": note}
             key = _quick_key(row)
-            if key in existing_quick or key in seen_quick:
-                duplicate_quick_rows.append({**row, "row": index, "reason": "系统已有相同记录" if key in existing_quick else "文件内重复"})
+            exists_in_system = key in existing_quick or _quick_identity_key(row) in existing_quick_identities
+            if exists_in_system or key in seen_quick:
+                duplicate_quick_rows.append({**row, "row": index, "reason": "系统已有相同记录" if exists_in_system else "文件内重复"})
             else:
                 quick_rows.append(row)
                 seen_quick.add(key)
@@ -202,7 +224,7 @@ def apply_import(preview: Dict[str, Any], state: Dict[str, Any], create_unknown_
     if import_duplicate_quick_expenses:
         quick_rows.extend(preview.get("duplicateQuickExpenses", []))
     for row in quick_rows:
-        added.append({"id": next_expense_id, "date": row["date"], "mode": "快速记账", "category": row["category"], "item": row.get("note") or row["category"], "amount": row["amount"], "handler": row["handler"], "status": "有效", "importBatchId": batch_id})
+        added.append({"id": next_expense_id, "date": row["date"], "mode": "快速记账", "category": row["category"], "item": row.get("note") or row["category"], "amount": row["amount"], "handler": row["handler"], "note": row.get("note", ""), "status": "有效", "importBatchId": batch_id})
         next_expense_id += 1
     for purchase in preview.get("purchases", []):
         for line in purchase["lines"]:

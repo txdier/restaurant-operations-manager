@@ -85,3 +85,27 @@ def test_desktop_versions_stay_aligned():
 
     assert match is not None
     assert manifest["version"] == APP_VERSION == match.group(1)
+
+
+def test_query_results_have_sorting_and_pagination_controls():
+    root = Path(__file__).resolve().parents[2]
+    page = (root / "app" / "page.tsx").read_text(encoding="utf-8")
+    css = (root / "app" / "globals.css").read_text(encoding="utf-8")
+
+    assert "function ReportTable" in page
+    assert 'aria-sort=' in page
+    assert 'className="report-pagination"' in page
+    assert "每页" in page and "上一页" in page and "下一页" in page
+    assert ".sort-button" in css and ".report-pagination" in css
+
+
+def test_income_save_action_is_inside_form_and_uses_legacy_safe_alignment():
+    root = Path(__file__).resolve().parents[2]
+    page = (root / "app" / "page.tsx").read_text(encoding="utf-8")
+    css = (root / "app" / "globals.css").read_text(encoding="utf-8")
+    income_source = page[page.index("function Income("):page.index("function Sales(")]
+
+    assert '<Head title="收入录入" desc="可按日或按一个经营周期录入总收入，不区分现金或电子支付"/>' in income_source
+    assert 'className="income-save-bar"' in income_source
+    assert income_source.index('className="income-save-bar"') < income_source.rindex("保存收入")
+    assert ".filters{align-items:flex-end}" in css
