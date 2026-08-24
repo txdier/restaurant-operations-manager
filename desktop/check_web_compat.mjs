@@ -5,7 +5,7 @@ const assetDirectory = path.resolve("desktop/restaurant_manager/web/assets");
 const files = (await readdir(assetDirectory)).filter((name) => name.endsWith(".js"));
 if (!files.length) throw new Error("Desktop JavaScript bundle was not generated");
 
-const unsupported = /(?:\?\?=|\|\|=|&&=)/;
+const unsupported = /(?:\?\?=|\|\|=|&&=|\.replaceAll\()/;
 for (const file of files) {
   const source = await readFile(path.join(assetDirectory, file), "utf8");
   const match = source.match(unsupported);
