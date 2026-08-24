@@ -97,6 +97,7 @@ def test_query_results_have_sorting_and_pagination_controls():
     assert 'className="report-pagination"' in page
     assert "每页" in page and "上一页" in page and "下一页" in page
     assert ".sort-button" in css and ".report-pagination" in css
+    assert ".sort-button{display:inline-flex;align-items:center;justify-content:flex-start;gap:5px;width:auto;min-width:0" in css
 
 
 def test_income_save_action_is_inside_form_and_uses_legacy_safe_alignment():

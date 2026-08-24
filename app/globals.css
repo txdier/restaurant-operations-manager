@@ -14,7 +14,7 @@
 
 /* Query tables: sortable headers and compact pagination. */
 .report-table{table-layout:auto}
-.sort-button{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-width:72px;padding:0;border:0;background:transparent;color:inherit;font:inherit;font-weight:600;text-align:left;cursor:pointer}
+.sort-button{display:inline-flex;align-items:center;justify-content:flex-start;gap:5px;width:auto;min-width:0;padding:0;border:0;background:transparent;color:inherit;font:inherit;font-weight:600;text-align:left;white-space:nowrap;cursor:pointer}
 .sort-button span{color:#9aa5b3;font-size:12px}.sort-button.active{color:#087d60}.sort-button.active span{color:#0a9e75}
 .report-pagination{display:flex;align-items:center;justify-content:space-between;gap:18px;min-height:58px;padding:10px 16px;border-top:1px solid var(--line);background:#fbfcfe;color:#718096;font-size:12px}
 .report-pagination>div{display:flex;align-items:center;gap:7px}.report-pagination label{display:flex;align-items:center;gap:6px}.report-pagination select{height:32px;padding:4px 8px}.report-pagination button{height:32px;padding:0 10px;border:1px solid #dce3eb;border-radius:5px;background:#fff;color:#486079;cursor:pointer}.report-pagination button:hover:not(:disabled){border-color:#1ca985;color:#087d60}.report-pagination button:disabled{background:#f3f5f7;color:#adb5c0;cursor:not-allowed}.report-pagination b{min-width:82px;color:#425268;text-align:center}
