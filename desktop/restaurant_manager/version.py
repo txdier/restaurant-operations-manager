@@ -1,4 +1,4 @@
 APP_ID = "cn.restaurant.manager"
 APP_NAME = "餐馆经营管理系统"
-APP_VERSION = "1.0.12"
+APP_VERSION = "1.0.13"
 DATA_SCHEMA_VERSION = 5
