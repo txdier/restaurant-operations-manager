@@ -37,6 +37,41 @@ def _number(value: Any, field: str) -> float:
     return float(number)
 
 
+def _money_key(value: Any) -> int:
+    number = Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return int(number * 100)
+
+
+def _quick_key(row: Dict[str, Any]) -> tuple[str, str, int, str, str]:
+    return (
+        _text(row.get("date")),
+        _text(row.get("category")),
+        _money_key(row.get("amount", 0)),
+        _text(row.get("handler")),
+        _text(row.get("note")),
+    )
+
+
+def _expense_quick_key(expense: Dict[str, Any]) -> tuple[str, str, int, str, str] | None:
+    if expense.get("purchaseNo") or _text(expense.get("mode")) == "详细采购":
+        return None
+    category = _text(expense.get("category"))
+    item = _text(expense.get("item"))
+    note = _text(expense.get("note"))
+    if not note and item not in (category, "快速支出"):
+        note = item
+    try:
+        return (
+            _text(expense.get("date")),
+            category,
+            _money_key(expense.get("amount", 0)),
+            _text(expense.get("handler")),
+            note,
+        )
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
 def create_import_template(target: Path) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     book = Workbook()
@@ -57,7 +92,7 @@ def create_import_template(target: Path) -> Path:
     detail.append(["CG-202608-001", date.today(), "五花肉", "食材", 12, "kg", 28, "张师傅", "晨间采购"])
     detail.append(["CG-202608-001", date.today(), "土豆", "食材", 20, "kg", 3.2, "张师傅", "同一采购单"])
     notes.append(["工作表", "用途", "关键规则"])
-    notes.append(["快速支出", "不需要商品、数量、单价的费用", "金额直接记为一笔支出"])
+    notes.append(["快速支出", "不需要商品、数量、单价的费用", "日期、类别、金额、经手人、备注完全相同时视为重复，默认跳过"])
     notes.append(["详细采购", "按商品逐行记录采购明细", "相同采购单号会合并为一张采购单；商品名称+单位用于匹配商品"])
     notes.append(["通用", "日期格式 YYYY-MM-DD", "支出类别必须已在系统中启用；不要修改工作表名称和表头"])
     book.save(target)
@@ -80,9 +115,12 @@ def preview_import(path: Path, state: Dict[str, Any]) -> Dict[str, Any]:
     for product in products:
         units_by_name.setdefault(_text(product.get("name")), set()).add(_text(product.get("unit")))
     existing_orders = {_text(e.get("purchaseNo")) for e in state.get("expenses", []) if e.get("purchaseNo")}
+    existing_quick = {key for expense in state.get("expenses", []) if (key := _expense_quick_key(expense)) is not None}
     errors: list[str] = []
     warnings: list[str] = []
     quick_rows: list[Dict[str, Any]] = []
+    duplicate_quick_rows: list[Dict[str, Any]] = []
+    seen_quick: set[tuple[str, str, int, str, str]] = set()
     purchase_map: Dict[str, Dict[str, Any]] = {}
     unknown: Dict[tuple[str, str], Dict[str, str]] = {}
 
@@ -103,7 +141,13 @@ def preview_import(path: Path, state: Dict[str, Any]) -> Dict[str, Any]:
                 raise ValueError("日期和支出类别不能为空")
             if category not in active_categories:
                 raise ValueError(f"支出类别“{category}”不存在或已停用")
-            quick_rows.append({"date": day, "category": category, "amount": _number(values[2], "金额"), "handler": handler, "note": note})
+            row = {"date": day, "category": category, "amount": _number(values[2], "金额"), "handler": handler, "note": note}
+            key = _quick_key(row)
+            if key in existing_quick or key in seen_quick:
+                duplicate_quick_rows.append({**row, "row": index, "reason": "系统已有相同记录" if key in existing_quick else "文件内重复"})
+            else:
+                quick_rows.append(row)
+                seen_quick.add(key)
         except (ValueError, TypeError) as error:
             errors.append(f"快速支出第 {index} 行：{error}")
 
@@ -134,10 +178,12 @@ def preview_import(path: Path, state: Dict[str, Any]) -> Dict[str, Any]:
     purchases = list(purchase_map.values())
     if unknown:
         warnings.append(f"有 {len(unknown)} 个商品尚未建立，可在导入时自动新增")
-    return {"path": str(path), "quickExpenses": quick_rows, "purchases": purchases, "unknownProducts": list(unknown.values()), "errors": errors, "warnings": warnings, "counts": {"quickExpenses": len(quick_rows), "purchaseOrders": len(purchases), "purchaseLines": sum(len(p["lines"]) for p in purchases)}}
+    if duplicate_quick_rows:
+        warnings.append(f"发现 {len(duplicate_quick_rows)} 笔重复快速支出，默认跳过；如确认是不同业务，可选择仍然导入")
+    return {"path": str(path), "quickExpenses": quick_rows, "duplicateQuickExpenses": duplicate_quick_rows, "purchases": purchases, "unknownProducts": list(unknown.values()), "errors": errors, "warnings": warnings, "counts": {"quickExpenses": len(quick_rows), "duplicateQuickExpenses": len(duplicate_quick_rows), "purchaseOrders": len(purchases), "purchaseLines": sum(len(p["lines"]) for p in purchases)}}
 
 
-def apply_import(preview: Dict[str, Any], state: Dict[str, Any], create_unknown_products: bool) -> Dict[str, Any]:
+def apply_import(preview: Dict[str, Any], state: Dict[str, Any], create_unknown_products: bool, import_duplicate_quick_expenses: bool = False) -> Dict[str, Any]:
     if preview.get("errors"):
         raise ValueError("导入预览仍有错误，请先修正 Excel 文件")
     if preview.get("unknownProducts") and not create_unknown_products:
@@ -152,7 +198,10 @@ def apply_import(preview: Dict[str, Any], state: Dict[str, Any], create_unknown_
         next_product_id += 1
     next_expense_id = max([int(e.get("id", 0)) for e in state.get("expenses", [])] + [0]) + 1
     added: list[Dict[str, Any]] = []
-    for row in preview.get("quickExpenses", []):
+    quick_rows = list(preview.get("quickExpenses", []))
+    if import_duplicate_quick_expenses:
+        quick_rows.extend(preview.get("duplicateQuickExpenses", []))
+    for row in quick_rows:
         added.append({"id": next_expense_id, "date": row["date"], "mode": "快速记账", "category": row["category"], "item": row.get("note") or row["category"], "amount": row["amount"], "handler": row["handler"], "status": "有效", "importBatchId": batch_id})
         next_expense_id += 1
     for purchase in preview.get("purchases", []):
@@ -162,5 +211,5 @@ def apply_import(preview: Dict[str, Any], state: Dict[str, Any], create_unknown_
             added.append({"id": next_expense_id, "date": purchase["date"], "mode": "详细采购", "category": line["category"], "item": f'{line["name"]} {line["qty"]:g}{line["unit"]}', "amount": amount, "handler": purchase["handler"], "status": "有效", "purchaseNo": purchase["purchaseNo"], "productId": product["id"], "qty": line["qty"], "unit": line["unit"], "price": line["price"], "note": line.get("note", ""), "importBatchId": batch_id})
             next_expense_id += 1
     state.setdefault("expenses", []).extend(added)
-    state.setdefault("importBatches", []).append({"id": batch_id, "file": Path(preview["path"]).name, "importedAt": datetime.now().isoformat(timespec="seconds"), "quickExpenses": preview["counts"]["quickExpenses"], "purchaseOrders": preview["counts"]["purchaseOrders"], "purchaseLines": preview["counts"]["purchaseLines"]})
+    state.setdefault("importBatches", []).append({"id": batch_id, "file": Path(preview["path"]).name, "importedAt": datetime.now().isoformat(timespec="seconds"), "quickExpenses": len(quick_rows), "duplicateQuickExpenses": len(preview.get("duplicateQuickExpenses", [])) if import_duplicate_quick_expenses else 0, "purchaseOrders": preview["counts"]["purchaseOrders"], "purchaseLines": preview["counts"]["purchaseLines"]})
     return state

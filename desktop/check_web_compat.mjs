@@ -11,4 +11,20 @@ for (const file of files) {
   const match = source.match(unsupported);
   if (match) throw new Error(`${file} contains unsupported Qt WebEngine syntax: ${match[0]}`);
 }
-console.log(`Desktop JavaScript compatibility check passed (${files.length} bundle${files.length === 1 ? "" : "s"}).`);
+
+const cssFiles = (await readdir(assetDirectory)).filter((name) => name.endsWith(".css"));
+if (!cssFiles.length) throw new Error("Desktop CSS bundle was not generated");
+const css = (await Promise.all(cssFiles.map((file) => readFile(path.join(assetDirectory, file), "utf8")))).join("\n");
+const pageSource = await readFile(path.resolve("app/page.tsx"), "utf8");
+if (css.includes("input[type=date]") || pageSource.includes('type="date"')) {
+  throw new Error("Desktop bundle must not rely on native date inputs");
+}
+const dateControl = css.match(/\.date-control\{([^}]*)\}/)?.[1] ?? "";
+if (!dateControl.includes("grid-template-columns:minmax(0,1fr) 32px") || !dateControl.includes("width:128px")) {
+  throw new Error("Desktop custom date control spacing is missing");
+}
+if (!css.includes(".date-trigger") || !css.includes(".date-calendar")) {
+  throw new Error("Desktop custom date button or calendar panel is missing");
+}
+
+console.log(`Desktop Web compatibility check passed (${files.length} JavaScript and ${cssFiles.length} CSS bundle${cssFiles.length === 1 ? "" : "s"}).`);

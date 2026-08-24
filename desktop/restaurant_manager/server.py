@@ -365,7 +365,12 @@ class ApiHandler(BaseHTTPRequestHandler):
                 state = self.service.database.load()
                 preview = preview_import(source, state)
                 self.service.database.backup(self.service._backup_dir(state), "before_import")
-                state = apply_import(preview, state, bool(body.get("createUnknownProducts", False)))
+                state = apply_import(
+                    preview,
+                    state,
+                    bool(body.get("createUnknownProducts", False)),
+                    bool(body.get("importDuplicateQuickExpenses", False)),
+                )
                 state = self.service.database.save(state, "import_expenses")
                 return self._json({"ok": True, "state": self._public_state(state), "counts": preview["counts"]})
             if self.path == "/api/select-file":
