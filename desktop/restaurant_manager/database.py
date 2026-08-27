@@ -10,6 +10,7 @@ from threading import RLock
 from typing import Any, Dict, Iterator
 
 from .legacy_sync_v6 import sync_legacy_changes
+from .legacy_sync_v6_extended import EXTENDED_KEYS, sync_extended_legacy_changes
 from .migrations import migrate_database, migrate_state
 from .paths import database_path, default_backup_dir
 from .version import DATA_SCHEMA_VERSION
@@ -104,8 +105,8 @@ class Database:
             self._clear_wal_sidecars()
 
     def load(self) -> Dict[str, Any]:
-        # app_state remains the compatibility read model during phase B. Converted
-        # write paths update it in the same transaction as the relational tables.
+        # app_state remains a compatibility read model in phase B. Every business
+        # group is mirrored into v6 tables in the same transaction on save.
         with self.lock, self.connect() as conn:
             row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
             if row is None:
@@ -123,6 +124,8 @@ class Database:
             payload = json.dumps(state, ensure_ascii=False, separators=(",", ":"))
             conn.execute("BEGIN IMMEDIATE")
             unsupported_changes = sync_legacy_changes(conn, current, state)
+            sync_extended_legacy_changes(conn, current, state)
+            unsupported_changes = [key for key in unsupported_changes if key not in EXTENDED_KEYS]
             conn.execute("UPDATE app_state SET payload=?, updated_at=CURRENT_TIMESTAMP WHERE id=1", (payload,))
             conn.execute(
                 "INSERT INTO audit_log(event,detail) VALUES(?,?)",
