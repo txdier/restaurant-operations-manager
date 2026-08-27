@@ -14,6 +14,16 @@ export type ExpenseQuery={
   pageSize?:number;
 };
 
+export type ReportQuery={
+  start:string;
+  end:string;
+  keyword?:string;
+  sortBy?:string;
+  sortOrder?:"asc"|"desc";
+  page?:number;
+  pageSize?:number;
+};
+
 function queryString(values:Record<string,unknown>){
   const params=new URLSearchParams();
   for(const [key,value] of Object.entries(values)){
@@ -62,6 +72,34 @@ export async function upsertIncomeV2(item:any){
 
 export async function dashboardV2(date?:string){
   return desktopRequest<{todayIncome:number;todayExpense:number;monthIncome:number;monthExpense:number;monthBalance:number}>(`v2/dashboard${queryString({date})}`);
+}
+
+export async function reportSummaryV2(start:string,end:string){
+  return desktopRequest<{income:number;expense:number;balance:number}>(`v2/reports/summary${queryString({start,end})}`);
+}
+
+export async function reportOptionsV2(){
+  return desktopRequest<{categories:string[];handlers:string[];products:any[]}>("v2/reports/options");
+}
+
+export async function reportExpensesV2(query:ExpenseQuery={}){
+  return desktopRequest<{items:any[];page:number;pageSize:number;total:number;totalPages:number;amountTotal:number}>(`v2/reports/expenses${queryString(query)}`);
+}
+
+export async function reportIncomeV2(query:ReportQuery){
+  return desktopRequest<{items:any[];page:number;pageSize:number;total:number;totalPages:number}>(`v2/reports/income${queryString(query)}`);
+}
+
+export async function reportSalesV2(query:ReportQuery){
+  return desktopRequest<{items:any[];page:number;pageSize:number;total:number;totalPages:number}>(`v2/reports/sales${queryString(query)}`);
+}
+
+export async function reportStockV2(query:ReportQuery){
+  return desktopRequest<{items:any[];page:number;pageSize:number;total:number;totalPages:number}>(`v2/reports/stock${queryString(query)}`);
+}
+
+export async function reportPricesV2(productId:number,query:ReportQuery){
+  return desktopRequest<{items:any[];page:number;pageSize:number;total:number;totalPages:number;product:any;summary:{min:number;max:number;latest:number;average:number}}>(`v2/reports/prices${queryString({productId,...query})}`);
 }
 
 export async function exportAllV2(format:"xlsx"|"zip",start="",end=""){
