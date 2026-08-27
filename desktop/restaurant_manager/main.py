@@ -11,6 +11,7 @@ from .core_data_routes import install_core_data_routes
 from .storage_export_routes_v6 import install_storage_export_routes
 from .import_routes_v6 import install_import_routes_v6
 from .report_routes_v6 import install_report_routes_v6
+from .report_export_routes_v6 import install_report_export_routes_v6
 from .version import APP_NAME, APP_VERSION
 
 
@@ -39,6 +40,7 @@ def main() -> int:
     install_storage_export_routes()
     install_import_routes_v6()
     install_report_routes_v6()
+    install_report_export_routes_v6()
     logging.info("Starting %s %s", APP_NAME, APP_VERSION)
     from PyQt5.QtCore import QUrl
     from PyQt5.QtCore import Qt, QTimer
