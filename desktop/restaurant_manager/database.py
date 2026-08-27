@@ -9,6 +9,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Any, Dict, Iterator
 
+from .legacy_sync_v6 import sync_legacy_changes
 from .migrations import migrate_database, migrate_state
 from .paths import database_path, default_backup_dir
 from .version import DATA_SCHEMA_VERSION
@@ -43,8 +44,6 @@ class Database:
                 version = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
                 if not version or int(version[0]) != DATA_SCHEMA_VERSION:
                     raise ValueError("候选数据库版本校验失败")
-                # migrate_database enables WAL. Flush every validated page back into
-                # the candidate .db before copying that file into the active slot.
                 checkpoint = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
                 if checkpoint and checkpoint[0] not in (0,):
                     raise ValueError(f"候选数据库 WAL 回写失败：{checkpoint}")
@@ -105,9 +104,8 @@ class Database:
             self._clear_wal_sidecars()
 
     def load(self) -> Dict[str, Any]:
-        # During phase A app_state intentionally remains the runtime source of truth.
-        # v6 tables are a validated migration snapshot until per-entity APIs replace
-        # the legacy whole-state save path.
+        # app_state remains the compatibility read model during phase B. Converted
+        # write paths update it in the same transaction as the relational tables.
         with self.lock, self.connect() as conn:
             row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
             if row is None:
@@ -117,16 +115,23 @@ class Database:
     def save(self, state: Dict[str, Any], event: str = "save_state") -> Dict[str, Any]:
         with self.lock, self.connect() as conn:
             current_row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
-            current = json.loads(current_row[0]) if current_row else {}
+            current = migrate_state(json.loads(current_row[0])) if current_row else {}
             password_hash = current.get("settings", {}).get("passwordHash")
             state = migrate_state(state)
             if password_hash and not state.get("settings", {}).get("passwordHash"):
                 state["settings"]["passwordHash"] = password_hash
             payload = json.dumps(state, ensure_ascii=False, separators=(",", ":"))
             conn.execute("BEGIN IMMEDIATE")
+            unsupported_changes = sync_legacy_changes(conn, current, state)
             conn.execute("UPDATE app_state SET payload=?, updated_at=CURRENT_TIMESTAMP WHERE id=1", (payload,))
-            conn.execute("INSERT INTO audit_log(event,detail) VALUES(?,?)", (event, "{}"))
-            conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('relational_snapshot_dirty','1')")
+            conn.execute(
+                "INSERT INTO audit_log(event,detail) VALUES(?,?)",
+                (event, json.dumps({"unsupportedRelationalGroups": unsupported_changes}, ensure_ascii=False, separators=(",", ":"))),
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO meta(key,value) VALUES('relational_snapshot_dirty',?)",
+                ("1" if unsupported_changes else "0",),
+            )
             conn.commit()
         return state
 
