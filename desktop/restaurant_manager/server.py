@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Dict, Tuple
 
 from .database import Database
+from .configuration_v6 import change_password_v6, load_settings_v6, patch_settings_v6, verify_unlock_v6
 from .exporter import export_csv_zip, export_query_csv, export_xlsx
 from .importer import apply_import, create_import_template, preview_import
 from .paths import data_dir, default_backup_dir, install_dir, log_file, web_dir
@@ -125,26 +126,27 @@ class DesktopService:
         self.token = secrets.token_urlsafe(24)
 
     def _backup_dir(self, state: Dict[str, Any] | None = None) -> Path:
-        state = state or self.database.load()
-        configured = str(state.get("settings", {}).get("backupDir", "")).strip()
+        source = load_settings_v6(self.database) if state is None else state
+        settings = source.get("settings", source) if isinstance(source, dict) else {}
+        configured = str(settings.get("backupDir", "")).strip()
         return Path(configured) if configured else default_backup_dir()
 
     def maybe_auto_backup(self) -> None:
-        state = self.database.load()
-        settings = state["settings"]
+        settings = load_settings_v6(self.database)
         today = date.today().isoformat()
         now = datetime.now().strftime("%H:%M")
         if settings.get("lastAutoBackupDate") != today and now >= settings.get("backupTime", "08:00"):
-            self.database.backup(self._backup_dir(state), "auto")
+            self.database.backup(self._backup_dir(settings), "auto")
             settings["lastAutoBackupDate"] = today
-            self.database.save(state, "auto_backup")
-            self.prune_backups(state)
+            patch_settings_v6(self.database, {"lastAutoBackupDate": today}, "auto_backup")
+            self.prune_backups(settings)
 
     def prune_backups(self, state: Dict[str, Any] | None = None) -> None:
-        state = state or self.database.load()
-        keep_days = max(7, int(state.get("settings", {}).get("backupKeepDays", 30)))
+        source = load_settings_v6(self.database) if state is None else state
+        settings = source.get("settings", source) if isinstance(source, dict) else {}
+        keep_days = max(7, int(settings.get("backupKeepDays", 30)))
         cutoff = datetime.now() - timedelta(days=keep_days)
-        for item in self._backup_dir(state).glob("restaurant_*.db"):
+        for item in self._backup_dir(settings).glob("restaurant_*.db"):
             if datetime.fromtimestamp(item.stat().st_mtime) < cutoff:
                 item.unlink(missing_ok=True)
 
@@ -164,7 +166,7 @@ class DesktopService:
     def sync_desktop_shortcut(self, overrides: Dict[str, Any] | None = None) -> Dict[str, Any]:
         if os.name != "nt":
             raise ValueError("桌面快捷方式设置仅在 Windows 桌面版中可用")
-        settings = dict(self.database.load().get("settings", {}))
+        settings = dict(load_settings_v6(self.database))
         settings.update(overrides or {})
         name = safe_shortcut_name(str(settings.get("desktopShortcutName") or settings.get("appName") or APP_NAME))
         icon_data = str(settings.get("desktopIconDataUrl") or settings.get("logoDataUrl") or "")
@@ -227,16 +229,10 @@ class DesktopService:
         return result
 
     def change_password(self, current: str, new: str) -> None:
-        state = self.database.load()
-        encoded = state.get("settings", {}).get("passwordHash", "")
-        if encoded and not verify_password(current, encoded):
-            raise ValueError("当前密码不正确")
-        state["settings"]["passwordHash"] = hash_password(new)
-        self.database.save(state, "change_password")
+        change_password_v6(self.database, current, new)
 
     def unlock(self, password: str) -> bool:
-        encoded = self.database.load().get("settings", {}).get("passwordHash", "")
-        return not encoded or verify_password(password, encoded)
+        return verify_unlock_v6(self.database, password)
 
 
 class ApiHandler(BaseHTTPRequestHandler):
@@ -303,13 +299,12 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "state": self._public_state(state)})
             if self.path == "/api/backup":
                 configured = str(body.get("targetDir", "")).strip()
-                state = self.service.database.load()
-                if configured and configured != str(state.get("settings", {}).get("backupDir", "")):
-                    state["settings"]["backupDir"] = configured
-                    state = self.service.database.save(state, "set_backup_directory")
-                target_dir = self.service._backup_dir(state)
+                settings = load_settings_v6(self.service.database)
+                if configured and configured != str(settings.get("backupDir", "")):
+                    settings = patch_settings_v6(self.service.database, {"backupDir": configured}, "set_backup_directory")
+                target_dir = self.service._backup_dir(settings)
                 target = self.service.database.backup(target_dir, "manual")
-                self.service.prune_backups(state)
+                self.service.prune_backups(settings)
                 return self._json({"ok": True, "path": str(target), "items": self.service.backup_list()})
             if self.path == "/api/restore":
                 source = Path(str(body.get("path", "")))
