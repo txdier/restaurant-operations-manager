@@ -5,6 +5,9 @@ import {desktopRequest,isDesktop,loadDesktopState,saveDesktopState} from "./desk
 import {upsertIncomeRecord} from "./income-records.mjs";
 import ReportsV2 from "./reports-v2";
 import DataExchangeV2 from "./data-exchange-v2";
+import IncomeV2 from "./income-v2";
+import ExpensesV2 from "./expenses-v2";
+import ProductsV2 from "./products-v2";
 type Key="dashboard"|"income"|"sales"|"expenses"|"products"|"stocktake"|"reminders"|"payroll"|"suppliers"|"reports"|"data"|"backup"|"settings";
 type Expense={id:number,date:string,mode:string,category:string,item:string,amount:number,handler:string,status:string};
 type Product={id:number,name:string,category:string,brand:string,spec:string,unit:string,stocktake:boolean,reminder:boolean,active:boolean};
@@ -84,10 +87,10 @@ function DateInput({value,defaultValue,onChange}:{value?:string;defaultValue?:st
 }
 function Screen({active,go,setToast,expenses,setExpenses,products,setProducts,reminders,setReminders,saleCategories,setSaleCategories,expenseCategories,setExpenseCategories,employees,setEmployees,payroll,setPayroll,income,setIncome,incomeRecords,setIncomeRecords,total,salesRecords,setSalesRecords,stocktakes,setStocktakes,suppliers,setSuppliers,assets,setAssets,settings,setSettings,appVersion,updateInfo,updateChecking,checkUpdate}:any){
  if(active==="dashboard")return <DashboardReal go={go} income={income} incomeRecords={incomeRecords} expenses={expenses} reminders={reminders}/>;
- if(active==="income")return <Income income={income} setIncome={setIncome} incomeRecords={incomeRecords} setIncomeRecords={setIncomeRecords} total={total} toast={setToast}/>;
+ if(active==="income")return isDesktop()?<IncomeV2 toast={setToast}/>:<Income income={income} setIncome={setIncome} incomeRecords={incomeRecords} setIncomeRecords={setIncomeRecords} total={total} toast={setToast}/>;
  if(active==="sales")return <Sales incomeRecords={incomeRecords} saleCategories={saleCategories} salesRecords={salesRecords} setSalesRecords={setSalesRecords} toast={setToast}/>;
- if(active==="expenses")return <Expenses expenses={expenses} setExpenses={setExpenses} products={products} setProducts={setProducts} expenseCategories={expenseCategories} toast={setToast} go={go}/>;
- if(active==="products")return <Products products={products} setProducts={setProducts} expenses={expenses} reminders={reminders} setReminders={setReminders} toast={(message:string)=>{if(message.startsWith("查看 ")){const product=products.find((p:Product)=>message.includes(p.name));if(product)sessionStorage.setItem("report-product-id",String(product.id));sessionStorage.setItem("report-open-price","1");go("reports")}else setToast(message)}}/>;
+ if(active==="expenses")return isDesktop()?<ExpensesV2 expenseCategories={expenseCategories} toast={setToast} go={go}/>:<Expenses expenses={expenses} setExpenses={setExpenses} products={products} setProducts={setProducts} expenseCategories={expenseCategories} toast={setToast} go={go}/>;
+ if(active==="products")return isDesktop()?<ProductsV2 toast={setToast} go={go}/>:<Products products={products} setProducts={setProducts} expenses={expenses} reminders={reminders} setReminders={setReminders} toast={(message:string)=>{if(message.startsWith("查看 ")){const product=products.find((p:Product)=>message.includes(p.name));if(product)sessionStorage.setItem("report-product-id",String(product.id));sessionStorage.setItem("report-open-price","1");go("reports")}else setToast(message)}}/>;
  if(active==="stocktake")return <Stocktake products={products} stocktakes={stocktakes} setStocktakes={setStocktakes} toast={setToast}/>;
  if(active==="reminders")return <Reminders reminders={reminders} setReminders={setReminders} toast={setToast}/>;
  if(active==="payroll")return <Payroll employees={employees} setEmployees={setEmployees} payroll={payroll} setPayroll={setPayroll} toast={setToast}/>;
