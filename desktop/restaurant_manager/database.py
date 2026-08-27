@@ -19,14 +19,40 @@ class Database:
         self.path = path or database_path()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.lock = RLock()
-        safety = self._migration_backup()
-        try:
+        self._initialize_safely()
+
+    def _initialize_safely(self) -> None:
+        old_version = self._stored_schema_version()
+        needs_candidate = self.path.exists() and self.path.stat().st_size and old_version < DATA_SCHEMA_VERSION
+        if not needs_candidate:
             with self.connect() as conn:
                 migrate_database(conn)
+            return
+
+        safety = self._migration_backup(old_version)
+        candidate = self.path.parent / ".migration-candidate.db"
+        candidate.unlink(missing_ok=True)
+        try:
+            with sqlite3.connect(str(self.path)) as source, sqlite3.connect(str(candidate)) as dest:
+                source.backup(dest)
+            with sqlite3.connect(str(candidate), timeout=15) as conn:
+                migrate_database(conn)
+                integrity = conn.execute("PRAGMA integrity_check").fetchone()
+                if not integrity or integrity[0] != "ok":
+                    raise ValueError("候选数据库完整性检查失败")
+                version = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+                if not version or int(version[0]) != DATA_SCHEMA_VERSION:
+                    raise ValueError("候选数据库版本校验失败")
+            self._replace_from_snapshot(candidate)
         except Exception:
-            if safety:
-                shutil.copy2(safety, self.path)
+            # Migration happens on the candidate copy. The active database normally
+            # remains untouched; the safety copy also protects against a replace
+            # failure after validation.
+            if safety.exists():
+                self._replace_from_snapshot(safety)
             raise
+        finally:
+            candidate.unlink(missing_ok=True)
 
     def _stored_schema_version(self) -> int:
         if not self.path.exists() or not self.path.stat().st_size:
@@ -45,11 +71,9 @@ class Database:
         except (sqlite3.Error, ValueError, TypeError, json.JSONDecodeError):
             return 1
 
-    def _migration_backup(self) -> Path | None:
-        old_version = self._stored_schema_version()
-        if old_version >= DATA_SCHEMA_VERSION or not self.path.exists() or not self.path.stat().st_size:
-            return None
-        root = self.path.parent / "backups"
+    def _migration_backup(self, old_version: int | None = None) -> Path:
+        old_version = self._stored_schema_version() if old_version is None else old_version
+        root = self.path.parent / "backups" / "migration"
         root.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
         target = root / f"restaurant_{stamp}_before_schema_v{old_version}_to_v{DATA_SCHEMA_VERSION}.db"
@@ -70,19 +94,16 @@ class Database:
             Path(str(self.path) + suffix).unlink(missing_ok=True)
 
     def _replace_from_snapshot(self, source: Path) -> None:
-        """Replace the active database from a checked SQLite snapshot.
-
-        All Database operations share the same lock, so once acquired there are no
-        application-owned SQLite connections writing to the target. Removing WAL/SHM
-        sidecars before and after the copy prevents pages from the previous database
-        from being replayed against the restored file on the next connection.
-        """
+        """Replace the active database from a checked SQLite snapshot."""
         with self.lock:
             self._clear_wal_sidecars()
             shutil.copy2(source, self.path)
             self._clear_wal_sidecars()
 
     def load(self) -> Dict[str, Any]:
+        # During phase A app_state intentionally remains the runtime source of truth.
+        # v6 tables are a validated migration snapshot until per-entity APIs replace
+        # the legacy whole-state save path.
         with self.lock, self.connect() as conn:
             row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
             if row is None:
@@ -101,6 +122,9 @@ class Database:
             conn.execute("BEGIN IMMEDIATE")
             conn.execute("UPDATE app_state SET payload=?, updated_at=CURRENT_TIMESTAMP WHERE id=1", (payload,))
             conn.execute("INSERT INTO audit_log(event,detail) VALUES(?,?)", (event, "{}"))
+            # Mark the migration snapshot dirty. Phase B entity repositories will
+            # update relational tables directly and remove this compatibility flag.
+            conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('relational_snapshot_dirty','1')")
             conn.commit()
         return state
 
