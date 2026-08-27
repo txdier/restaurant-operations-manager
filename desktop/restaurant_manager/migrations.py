@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Dict
 
+from .storage_v6 import RELATIONAL_SCHEMA_VERSION, relational_state_available, state_to_v6, validate_v6
 from .version import DATA_SCHEMA_VERSION
 
 
@@ -93,8 +94,6 @@ def migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
             income.setdefault("entryMode", "day")
             income.setdefault("periodStart", income.get("date", ""))
             income.setdefault("periodEnd", income.get("date", ""))
-            # Keep hall/room as the historical source breakdown. New records
-            # use dineIn while reports normalize both storage formats.
             income.setdefault("dineIn", float(income.get("hall", 0) or 0) + float(income.get("room", 0) or 0))
         version = 5
     state["schemaVersion"] = DATA_SCHEMA_VERSION
@@ -114,8 +113,18 @@ def migrate_database(conn: sqlite3.Connection) -> None:
         )
         row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
         if row is None:
-            conn.execute("INSERT INTO app_state(id,payload) VALUES(1,?)", (json.dumps(default_state(), ensure_ascii=False),))
+            state = default_state()
+            conn.execute("INSERT INTO app_state(id,payload) VALUES(1,?)", (json.dumps(state, ensure_ascii=False),))
         else:
             state = migrate_state(json.loads(row[0]))
             conn.execute("UPDATE app_state SET payload=?, updated_at=CURRENT_TIMESTAMP WHERE id=1", (json.dumps(state, ensure_ascii=False),))
+
+        if DATA_SCHEMA_VERSION >= RELATIONAL_SCHEMA_VERSION and not relational_state_available(conn):
+            state_to_v6(conn, state)
+            checks = validate_v6(conn, state)
+            conn.execute(
+                "INSERT OR REPLACE INTO schema_migrations(version,applied_at,detail) VALUES(?,?,?)",
+                (RELATIONAL_SCHEMA_VERSION, datetime.now().isoformat(timespec="seconds"), json.dumps(checks, ensure_ascii=False, separators=(",", ":"))),
+            )
         conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('schema_version',?)", (str(DATA_SCHEMA_VERSION),))
+        conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('min_app_version',?)", ("1.0.19",))
