@@ -60,24 +60,32 @@ def test_repeating_reminder_rolls_forward_and_one_time_finishes(tmp_path: Path):
 
 def test_payroll_snapshot_does_not_change_when_employee_salary_changes(tmp_path: Path):
     db = Database(tmp_path / "restaurant.db")
-    employee = upsert_employee_v6(db, {"name": "张师傅", "role": "厨师", "salary": 6000, "startDate": "2025-01-01", "active": True})
+    employee = upsert_employee_v6(db, {"name": "测试厨师", "role": "厨师", "salary": 6000, "startDate": "2025-01-01", "active": True})
     generated = generate_payroll_v6(db, "2026-08")
-    assert generated["rows"][0]["standard"] == 6000
+    generated_row = next(row for row in generated["rows"] if row["employeeId"] == employee["id"])
+    assert generated_row["standard"] == 6000
 
     upsert_employee_v6(db, {**employee, "salary": 6500})
     existing = get_payroll_v6(db, "2026-08")
-    assert existing["rows"][0]["standard"] == 6000
+    existing_row = next(row for row in existing["rows"] if row["employeeId"] == employee["id"])
+    assert existing_row["standard"] == 6000
 
-    confirmed = save_payroll_v6(db, {"month": "2026-08", "confirmed": True, "rows": [{**existing["rows"][0], "amount": 6200, "note": "奖金"}]})
+    edited_rows = [
+        {**row, "amount": 6200, "note": "奖金"} if row["employeeId"] == employee["id"] else row
+        for row in existing["rows"]
+    ]
+    confirmed = save_payroll_v6(db, {"month": "2026-08", "confirmed": True, "rows": edited_rows})
+    confirmed_row = next(row for row in confirmed["rows"] if row["employeeId"] == employee["id"])
     assert confirmed["confirmed"] is True
-    assert confirmed["rows"][0]["amount"] == 6200
+    assert confirmed_row["amount"] == 6200
     with pytest.raises(ValueError):
         generate_payroll_v6(db, "2026-08")
 
     unconfirmed = save_payroll_v6(db, {"month": "2026-08", "confirmed": False, "rows": confirmed["rows"]})
     assert unconfirmed["confirmed"] is False
     regenerated = generate_payroll_v6(db, "2026-08")
-    assert regenerated["rows"][0]["standard"] == 6500
+    regenerated_row = next(row for row in regenerated["rows"] if row["employeeId"] == employee["id"])
+    assert regenerated_row["standard"] == 6500
 
 
 def test_supplier_upsert_preserves_one_relational_row(tmp_path: Path):
