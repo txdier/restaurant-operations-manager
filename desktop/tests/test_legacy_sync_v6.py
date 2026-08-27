@@ -34,10 +34,35 @@ def test_legacy_save_incrementally_updates_core_relational_tables(tmp_path: Path
         assert conn.execute("SELECT COUNT(*) FROM expenses_v6 WHERE id=20").fetchone()[0] == 0
 
 
-def test_unsupported_legacy_group_marks_relational_snapshot_dirty(tmp_path: Path):
+def test_legacy_save_syncs_extended_relational_groups(tmp_path: Path):
     db = Database(tmp_path / "restaurant.db")
     state = db.load()
-    state["stocktakes"] = [{"id": 1, "date": "2026-08-27", "kind": "临时盘点", "rows": []}]
-    db.save(state, "legacy_stocktake")
+    state["salesRecords"] = [{"id": 40, "date": "2026-08-27", "rows": [{"categoryId": 1, "category": "主食", "qty": 2, "amount": 20.01}]}]
+    state["stocktakes"] = [{"id": 50, "date": "2026-08-27", "kind": "临时盘点", "rows": [{"productId": None, "product": "抽纸", "unit": "包", "previous": 3, "actual": 2, "change": -1, "note": ""}]}]
+    state["employees"] = [{"id": 60, "name": "张三", "role": "厨师", "salary": 6000.01, "startDate": "2026-01-01", "active": True}]
+    state["payrolls"] = [{"month": "2026-08", "confirmed": True, "rows": [{"employeeId": 60, "name": "张三", "role": "厨师", "standard": 6000.01, "amount": 5800.02, "note": "请假"}]}]
+    state["suppliers"] = [{"id": 70, "name": "供应商A", "contact": "李四", "phone": "123", "qualification": "有效", "note": "", "active": True}]
+    state["reminders"] = [{"id": 80, "name": "补纸", "product": "抽纸", "date": "2026-09-01", "cycle": 7, "done": False}]
+    state["assets"] = [{"id": 90, "name": "冰箱", "qty": 1, "unit": "台", "date": "2026-08-01", "amount": 2500.55, "status": "使用中", "note": "", "type": "asset"}]
+    state["importBatches"] = [{"id": "batch-a", "file": "a.xlsx", "importedAt": "2026-08-27T12:00:00", "quickExpenses": 1}]
+    db.save(state, "legacy_extended_save")
+
+    with sqlite3.connect(db.path) as conn:
+        assert conn.execute("SELECT amount_cents FROM sales_lines_v6 WHERE sales_record_id=40").fetchone()[0] == 2001
+        assert conn.execute("SELECT actual_quantity FROM stocktake_lines_v6 WHERE stocktake_id=50").fetchone()[0] == 2
+        assert conn.execute("SELECT standard_salary_cents FROM employees_v6 WHERE id=60").fetchone()[0] == 600001
+        assert conn.execute("SELECT actual_salary_cents FROM payroll_lines_v6").fetchone()[0] == 580002
+        assert conn.execute("SELECT name FROM suppliers_v6 WHERE id=70").fetchone()[0] == "供应商A"
+        assert conn.execute("SELECT cycle_days FROM reminders_v6 WHERE id=80").fetchone()[0] == 7
+        assert conn.execute("SELECT amount_cents FROM assets_v6 WHERE id=90").fetchone()[0] == 250055
+        assert conn.execute("SELECT file_name FROM import_batches_v6 WHERE id='batch-a'").fetchone()[0] == "a.xlsx"
+        assert conn.execute("SELECT value FROM meta WHERE key='relational_snapshot_dirty'").fetchone()[0] == "0"
+
+
+def test_unknown_legacy_group_marks_relational_snapshot_dirty(tmp_path: Path):
+    db = Database(tmp_path / "restaurant.db")
+    state = db.load()
+    state["futureUnknownData"] = {"value": 1}
+    db.save(state, "legacy_unknown")
     with sqlite3.connect(db.path) as conn:
         assert conn.execute("SELECT value FROM meta WHERE key='relational_snapshot_dirty'").fetchone()[0] == "1"
