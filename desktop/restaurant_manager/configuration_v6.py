@@ -136,7 +136,7 @@ def change_password_v6(database: Any, current: str, new: str) -> None:
             raise ValueError("当前密码不正确")
         recovery = row[1] if row else None
         conn.execute(
-            "INSERT OR REPLACE INTO security_settings(id,password_hash,recovery_hash,password_changed_at,updated_at) VALUES(1,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO security_settings(id,password_hash,recovery_hash,password_changed_at,updated_at) VALUES(1,?,?,?,?)",
             (encoded_new, recovery, now, now),
         )
         state_row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
