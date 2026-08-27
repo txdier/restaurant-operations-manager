@@ -8,6 +8,7 @@ from .paths import data_dir, log_file
 from .server import start_server
 from .migration_routes import install_migration_routes
 from .core_data_routes import install_core_data_routes
+from .storage_export_routes_v6 import install_storage_export_routes
 from .version import APP_NAME, APP_VERSION
 
 
@@ -33,6 +34,7 @@ def main() -> int:
     compatibility_environment()
     install_migration_routes()
     install_core_data_routes()
+    install_storage_export_routes()
     logging.info("Starting %s %s", APP_NAME, APP_VERSION)
     from PyQt5.QtCore import QUrl
     from PyQt5.QtCore import Qt, QTimer
