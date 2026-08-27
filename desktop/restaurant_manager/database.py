@@ -43,16 +43,20 @@ class Database:
                 version = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
                 if not version or int(version[0]) != DATA_SCHEMA_VERSION:
                     raise ValueError("候选数据库版本校验失败")
+                # migrate_database enables WAL. Flush every validated page back into
+                # the candidate .db before copying that file into the active slot.
+                checkpoint = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+                if checkpoint and checkpoint[0] not in (0,):
+                    raise ValueError(f"候选数据库 WAL 回写失败：{checkpoint}")
             self._replace_from_snapshot(candidate)
         except Exception:
-            # Migration happens on the candidate copy. The active database normally
-            # remains untouched; the safety copy also protects against a replace
-            # failure after validation.
             if safety.exists():
                 self._replace_from_snapshot(safety)
             raise
         finally:
             candidate.unlink(missing_ok=True)
+            Path(str(candidate) + "-wal").unlink(missing_ok=True)
+            Path(str(candidate) + "-shm").unlink(missing_ok=True)
 
     def _stored_schema_version(self) -> int:
         if not self.path.exists() or not self.path.stat().st_size:
@@ -122,8 +126,6 @@ class Database:
             conn.execute("BEGIN IMMEDIATE")
             conn.execute("UPDATE app_state SET payload=?, updated_at=CURRENT_TIMESTAMP WHERE id=1", (payload,))
             conn.execute("INSERT INTO audit_log(event,detail) VALUES(?,?)", (event, "{}"))
-            # Mark the migration snapshot dirty. Phase B entity repositories will
-            # update relational tables directly and remove this compatibility flag.
             conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('relational_snapshot_dirty','1')")
             conn.commit()
         return state
@@ -153,6 +155,9 @@ class Database:
                 integrity = check.execute("PRAGMA integrity_check").fetchone()
                 if not integrity or integrity[0] != "ok":
                     raise ValueError("备份数据库完整性检查失败")
+                checkpoint = check.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+                if checkpoint and checkpoint[0] not in (0,):
+                    raise ValueError(f"恢复候选库 WAL 回写失败：{checkpoint}")
             self._replace_from_snapshot(restore_copy)
             with self.connect() as conn:
                 migrate_database(conn)
@@ -161,3 +166,5 @@ class Database:
             raise
         finally:
             restore_copy.unlink(missing_ok=True)
+            Path(str(restore_copy) + "-wal").unlink(missing_ok=True)
+            Path(str(restore_copy) + "-shm").unlink(missing_ok=True)
