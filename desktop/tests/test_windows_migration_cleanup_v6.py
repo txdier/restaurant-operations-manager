@@ -1,0 +1,24 @@
+import json
+import sqlite3
+from contextlib import closing
+from pathlib import Path
+
+from restaurant_manager.database import Database
+
+
+def test_schema_migration_removes_candidate_and_wal_sidecars(tmp_path: Path):
+    path = tmp_path / "old.db"
+    with closing(sqlite3.connect(str(path))) as conn:
+        conn.execute("CREATE TABLE app_state (id INTEGER PRIMARY KEY, payload TEXT NOT NULL, updated_at TEXT)")
+        conn.execute(
+            "INSERT INTO app_state VALUES(1,?,CURRENT_TIMESTAMP)",
+            (json.dumps({"schemaVersion": 1, "expenses": [], "incomeRecords": []}),),
+        )
+        conn.commit()
+
+    Database(path)
+
+    candidate = tmp_path / ".migration-candidate.db"
+    assert not candidate.exists()
+    assert not Path(str(candidate) + "-wal").exists()
+    assert not Path(str(candidate) + "-shm").exists()
