@@ -16,7 +16,7 @@ from restaurant_manager.server import (
     safe_shortcut_name,
     static_content_type,
 )
-from restaurant_manager.version import APP_VERSION
+from restaurant_manager.version import APP_VERSION, DATA_SCHEMA_VERSION
 
 
 def test_javascript_uses_module_compatible_content_type():
@@ -85,6 +85,7 @@ def test_desktop_versions_stay_aligned():
 
     assert match is not None
     assert manifest["version"] == APP_VERSION == match.group(1)
+    assert manifest["dataSchemaVersion"] == DATA_SCHEMA_VERSION
 
 
 def test_query_results_have_sorting_and_pagination_controls():

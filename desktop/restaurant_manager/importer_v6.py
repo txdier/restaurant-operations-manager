@@ -100,6 +100,7 @@ def preview_import_v6(path: Path, database: Any) -> Dict[str, Any]:
             active_categories = {str(row[0]) for row in conn.execute("SELECT name FROM expense_categories_v6 WHERE active=1")}
             product_rows = conn.execute("SELECT id,name,unit,category_name_snapshot,active FROM products_v6 ORDER BY id").fetchall()
             product_pairs = {(str(row[1]), str(row[2])): {"id": int(row[0]), "name": str(row[1]), "unit": str(row[2]), "category": str(row[3])} for row in product_rows if row[4]}
+            inactive_product_pairs = {(str(row[1]), str(row[2])) for row in product_rows if not row[4]}
             units_by_name: Dict[str, set[str]] = {}
             for row in product_rows:
                 units_by_name.setdefault(str(row[1]), set()).add(str(row[2]))
@@ -164,6 +165,8 @@ def preview_import_v6(path: Path, database: Any) -> Dict[str, Any]:
                     if conn.execute("SELECT 1 FROM expenses_v6 WHERE purchase_no=? LIMIT 1", (purchase_no,)).fetchone():
                         raise ValueError(f"采购单号“{purchase_no}”已导入，不能重复导入")
                     product = product_pairs.get((name, unit))
+                    if not product and (name, unit) in inactive_product_pairs:
+                        raise ValueError(f"商品“{name}（{unit}）”已停用，请先在商品管理中启用后再导入")
                     if not product and name in units_by_name and unit not in units_by_name[name]:
                         raise ValueError(f"商品“{name}”已存在，但单位不同；请先确认商品单位")
                     if not product:
@@ -220,13 +223,13 @@ def preview_import_v6(path: Path, database: Any) -> Dict[str, Any]:
 
 
 def _category_ids(conn) -> Dict[str, int]:
-    return {str(name): int(row_id) for row_id, name in conn.execute("SELECT id,name FROM expense_categories_v6")}
+    return {str(name): int(row_id) for row_id, name in conn.execute("SELECT id,name FROM expense_categories_v6 WHERE active=1")}
 
 
 def _product_pairs(conn) -> Dict[Tuple[str, str], Dict[str, Any]]:
     return {
         (str(name), str(unit)): {"id": int(row_id), "name": str(name), "unit": str(unit), "category": str(category)}
-        for row_id, name, unit, category in conn.execute("SELECT id,name,unit,category_name_snapshot FROM products_v6")
+        for row_id, name, unit, category in conn.execute("SELECT id,name,unit,category_name_snapshot FROM products_v6 WHERE active=1")
     }
 
 
@@ -253,6 +256,24 @@ def apply_import_v6(
         conn.execute("BEGIN IMMEDIATE")
         category_ids = _category_ids(conn)
         product_pairs = _product_pairs(conn)
+        required_categories = {
+            _text(row.get("category")) for row in quick_rows
+        } | {
+            _text(line.get("category")) for purchase in purchases for line in purchase.get("lines", [])
+        }
+        unavailable_categories = sorted(name for name in required_categories if name not in category_ids)
+        if unavailable_categories:
+            raise ValueError("以下支出类别不存在或已停用：" + "、".join(unavailable_categories))
+        duplicate_orders = sorted({
+            str(purchase.get("purchaseNo", ""))
+            for purchase in purchases
+            if conn.execute(
+                "SELECT 1 FROM expenses_v6 WHERE purchase_no=? LIMIT 1",
+                (str(purchase.get("purchaseNo", "")),),
+            ).fetchone()
+        })
+        if duplicate_orders:
+            raise ValueError("以下采购单号已存在，不能重复导入：" + "、".join(duplicate_orders))
         next_product_id = int(conn.execute("SELECT COALESCE(MAX(id),0)+1 FROM products_v6").fetchone()[0])
         for unknown in preview.get("unknownProducts", []):
             pair = (_text(unknown.get("name")), _text(unknown.get("unit")))
@@ -289,7 +310,7 @@ def apply_import_v6(
                 pair = (_text(line["name"]), _text(line["unit"]))
                 product = product_pairs.get(pair)
                 if not product:
-                    raise ValueError(f"商品“{pair[0]}（{pair[1]}）”未建立")
+                    raise ValueError(f"商品“{pair[0]}（{pair[1]}）”未建立或已停用")
                 qty = Decimal(str(line["qtyDecimal"]))
                 price_cents = int(line["priceCents"])
                 total_yuan = (qty * (Decimal(price_cents) / Decimal(100))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)

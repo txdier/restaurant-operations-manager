@@ -34,7 +34,7 @@ class Database:
 
         safety = self._migration_backup(old_version)
         candidate = self.path.parent / ".migration-candidate.db"
-        candidate.unlink(missing_ok=True)
+        self._clear_snapshot_files(candidate)
         try:
             with closing(sqlite3.connect(str(self.path))) as source, closing(sqlite3.connect(str(candidate))) as dest:
                 source.backup(dest)
@@ -100,6 +100,12 @@ class Database:
         for suffix in ("-wal", "-shm"):
             Path(str(self.path) + suffix).unlink(missing_ok=True)
 
+    @staticmethod
+    def _clear_snapshot_files(path: Path) -> None:
+        path.unlink(missing_ok=True)
+        for suffix in ("-wal", "-shm"):
+            Path(str(path) + suffix).unlink(missing_ok=True)
+
     def _replace_from_snapshot(self, source: Path) -> None:
         """Replace the active database from a checked SQLite snapshot."""
         with self.lock:
@@ -163,6 +169,7 @@ class Database:
         safety = self.backup(source.parent, kind="before_restore")
         restore_copy = self.path.parent / ".restore-candidate.db"
         try:
+            self._clear_snapshot_files(restore_copy)
             shutil.copy2(source, restore_copy)
             with closing(sqlite3.connect(str(restore_copy))) as check:
                 migrate_database(check)

@@ -1,6 +1,7 @@
 import sqlite3
 from pathlib import Path
 
+import pytest
 from openpyxl import Workbook
 
 from restaurant_manager.database import Database
@@ -97,3 +98,68 @@ def test_import_can_explicitly_keep_duplicate_quick_expense(tmp_path: Path):
     apply_import_v6(preview, db, create_unknown_products=False, import_duplicate_quick_expenses=True)
     with sqlite3.connect(db.path) as conn:
         assert conn.execute("SELECT COUNT(*) FROM expenses_v6 WHERE expense_date='2026-08-27' AND amount_cents=2000 AND handler='甲'").fetchone()[0] == 2
+
+
+def test_import_rejects_an_exact_product_match_when_product_is_inactive(tmp_path: Path):
+    db = Database(tmp_path / "restaurant.db")
+    state = db.load()
+    state["expenseCategories"] = [{"id": 1, "name": "食材", "active": True}]
+    state["products"] = [{"id": 10, "name": "土豆", "category": "食材", "brand": "", "spec": "", "unit": "kg", "stocktake": True, "reminder": False, "active": False}]
+    db.save(state, "seed_inactive_product")
+
+    path = tmp_path / "inactive-product.xlsx"
+    book, _, detail = _workbook(path)
+    detail.append(["CG-INACTIVE", "2026-08-27", "土豆", "食材", 2, "kg", 3.20, "乙", ""])
+    book.save(path)
+
+    preview = preview_import_v6(path, db)
+    assert any("已停用" in error and "土豆" in error for error in preview["errors"])
+    assert preview["unknownProducts"] == []
+
+
+def test_import_revalidates_purchase_number_before_writing(tmp_path: Path):
+    db = Database(tmp_path / "restaurant.db")
+    state = db.load()
+    state["expenseCategories"] = [{"id": 1, "name": "食材", "active": True}]
+    state["products"] = [{"id": 10, "name": "土豆", "category": "食材", "brand": "", "spec": "", "unit": "kg", "stocktake": True, "reminder": False, "active": True}]
+    db.save(state, "seed_revalidation")
+
+    path = tmp_path / "revalidate.xlsx"
+    book, _, detail = _workbook(path)
+    detail.append(["CG-RACE", "2026-08-27", "土豆", "食材", 2, "kg", 3.20, "乙", ""])
+    book.save(path)
+    preview = preview_import_v6(path, db)
+    assert preview["errors"] == []
+
+    with sqlite3.connect(db.path) as conn:
+        conn.execute(
+            "INSERT INTO expenses_v6(id,uid,expense_date,mode,category_name_snapshot,item,amount_cents,handler,status,note,purchase_no,legacy_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (999, "race-expense", "2026-08-27", "详细采购", "食材", "占位", 100, "甲", "有效", "", "CG-RACE", ""),
+        )
+
+    with pytest.raises(ValueError, match="CG-RACE"):
+        apply_import_v6(preview, db, create_unknown_products=False)
+    with sqlite3.connect(db.path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM expenses_v6 WHERE purchase_no='CG-RACE'").fetchone()[0] == 1
+
+
+def test_import_revalidates_category_before_writing(tmp_path: Path):
+    db = Database(tmp_path / "restaurant.db")
+    state = db.load()
+    state["expenseCategories"] = [{"id": 1, "name": "耗材", "active": True}]
+    db.save(state, "seed_category_revalidation")
+
+    path = tmp_path / "category-revalidate.xlsx"
+    book, quick, _ = _workbook(path)
+    quick.append(["2026-08-27", "耗材", 10, "甲", "抹布"])
+    book.save(path)
+    preview = preview_import_v6(path, db)
+    assert preview["errors"] == []
+
+    with sqlite3.connect(db.path) as conn:
+        conn.execute("UPDATE expense_categories_v6 SET active=0 WHERE name='耗材'")
+
+    with pytest.raises(ValueError, match="耗材"):
+        apply_import_v6(preview, db, create_unknown_products=False)
+    with sqlite3.connect(db.path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM expenses_v6 WHERE item='抹布'").fetchone()[0] == 0

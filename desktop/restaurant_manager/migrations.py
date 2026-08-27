@@ -6,7 +6,7 @@ from datetime import date, datetime
 from typing import Any, Dict
 
 from .storage_v6 import RELATIONAL_SCHEMA_VERSION, relational_state_available, state_to_v6, validate_v6
-from .version import DATA_SCHEMA_VERSION
+from .version import DATA_SCHEMA_MIN_APP_VERSION, DATA_SCHEMA_VERSION
 
 
 def default_state() -> Dict[str, Any]:
@@ -127,4 +127,4 @@ def migrate_database(conn: sqlite3.Connection) -> None:
                 (RELATIONAL_SCHEMA_VERSION, datetime.now().isoformat(timespec="seconds"), json.dumps(checks, ensure_ascii=False, separators=(",", ":"))),
             )
         conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('schema_version',?)", (str(DATA_SCHEMA_VERSION),))
-        conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('min_app_version',?)", ("1.0.19",))
+        conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('min_app_version',?)", (DATA_SCHEMA_MIN_APP_VERSION,))

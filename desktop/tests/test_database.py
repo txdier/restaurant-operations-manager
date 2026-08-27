@@ -5,6 +5,7 @@ from pathlib import Path
 from restaurant_manager.database import Database
 from restaurant_manager.migrations import DATA_SCHEMA_VERSION, migrate_state
 from restaurant_manager.money import cents_to_yuan, yuan_to_cents
+from restaurant_manager.version import DATA_SCHEMA_MIN_APP_VERSION
 
 
 def test_database_initializes_and_round_trips(tmp_path: Path):
@@ -42,6 +43,7 @@ def test_old_state_is_migrated_through_candidate_and_keeps_backup(tmp_path: Path
 
     with sqlite3.connect(path) as conn:
         assert conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == "6"
+        assert conn.execute("SELECT value FROM meta WHERE key='min_app_version'").fetchone()[0] == DATA_SCHEMA_MIN_APP_VERSION
         assert conn.execute("SELECT COUNT(*) FROM schema_migrations WHERE version=6").fetchone()[0] == 1
         assert conn.execute("SELECT amount_cents FROM expenses_v6 WHERE id=7").fetchone()[0] == 1234
         income = conn.execute("SELECT dine_in_cents,chess_cents,delivery_cents FROM income_records_v6 WHERE id=1").fetchone()
