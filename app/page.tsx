@@ -3,6 +3,8 @@
 import {useEffect,useMemo,useRef,useState} from "react";
 import {desktopRequest,isDesktop,loadDesktopState,saveDesktopState} from "./desktop-api";
 import {upsertIncomeRecord} from "./income-records.mjs";
+import ReportsV2 from "./reports-v2";
+import DataExchangeV2 from "./data-exchange-v2";
 type Key="dashboard"|"income"|"sales"|"expenses"|"products"|"stocktake"|"reminders"|"payroll"|"suppliers"|"reports"|"data"|"backup"|"settings";
 type Expense={id:number,date:string,mode:string,category:string,item:string,amount:number,handler:string,status:string};
 type Product={id:number,name:string,category:string,brand:string,spec:string,unit:string,stocktake:boolean,reminder:boolean,active:boolean};
@@ -90,8 +92,8 @@ function Screen({active,go,setToast,expenses,setExpenses,products,setProducts,re
  if(active==="reminders")return <Reminders reminders={reminders} setReminders={setReminders} toast={setToast}/>;
  if(active==="payroll")return <Payroll employees={employees} setEmployees={setEmployees} payroll={payroll} setPayroll={setPayroll} toast={setToast}/>;
  if(active==="suppliers")return <Suppliers suppliers={suppliers} setSuppliers={setSuppliers} toast={setToast}/>;
- if(active==="reports")return <ReportsReal expenses={expenses} products={products} incomeRecords={incomeRecords} salesRecords={salesRecords} stocktakes={stocktakes} toast={setToast}/>;
- if(active==="data")return <DataExchange expenses={expenses} toast={setToast}/>;
+ if(active==="reports")return isDesktop()?<ReportsV2 toast={setToast}/>:<ReportsReal expenses={expenses} products={products} incomeRecords={incomeRecords} salesRecords={salesRecords} stocktakes={stocktakes} toast={setToast}/>;
+ if(active==="data")return isDesktop()?<DataExchangeV2 toast={setToast}/>:<DataExchange expenses={expenses} toast={setToast}/>;
  if(active==="backup")return <BackupReal settings={settings} setSettings={setSettings} toast={setToast}/>;
  return <SettingsReal saleCategories={saleCategories} setSaleCategories={setSaleCategories} expenseCategories={expenseCategories} setExpenseCategories={setExpenseCategories} settings={settings} setSettings={setSettings} appVersion={appVersion} updateInfo={updateInfo} updateChecking={updateChecking} checkUpdate={checkUpdate} toast={setToast}/>;
 }
