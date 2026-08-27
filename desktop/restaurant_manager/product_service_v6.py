@@ -4,22 +4,25 @@ import json
 from datetime import datetime
 from typing import Any, Dict
 
-from .repositories_v6 import V6Repository
 from .storage_v6 import _uid
+
+
+def _has_history(conn, product_id: int) -> bool:
+    expense = conn.execute("SELECT 1 FROM expenses_v6 WHERE product_id=? LIMIT 1", (int(product_id),)).fetchone()
+    stocktake = conn.execute("SELECT 1 FROM stocktake_lines_v6 WHERE product_id=? LIMIT 1", (int(product_id),)).fetchone()
+    return bool(expense or stocktake)
 
 
 def product_has_history_v6(database: Any, product_id: int) -> bool:
     with database.lock, database.connect() as conn:
-        expense = conn.execute("SELECT 1 FROM expenses_v6 WHERE product_id=? LIMIT 1", (int(product_id),)).fetchone()
-        stocktake = conn.execute("SELECT 1 FROM stocktake_lines_v6 WHERE product_id=? LIMIT 1", (int(product_id),)).fetchone()
-        return bool(expense or stocktake)
+        return _has_history(conn, int(product_id))
 
 
 def set_product_active_v6(database: Any, product_id: int, active: bool) -> Dict[str, Any]:
     with database.lock, database.connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
-            "SELECT id,name,category_name_snapshot,brand,spec,unit,stocktake_enabled,reminder_enabled,active,created_at,legacy_json FROM products_v6 WHERE id=?",
+            "SELECT id,name,category_name_snapshot,brand,spec,unit,stocktake_enabled,reminder_enabled,active,created_at FROM products_v6 WHERE id=?",
             (int(product_id),),
         ).fetchone()
         if not row:
@@ -47,10 +50,10 @@ def set_product_active_v6(database: Any, product_id: int, active: bool) -> Dict[
         conn.execute("UPDATE app_state SET payload=?,updated_at=CURRENT_TIMESTAMP WHERE id=1", (json.dumps(state, ensure_ascii=False, separators=(",", ":")),))
         conn.execute("INSERT INTO audit_log(event,detail) VALUES(?,?)", ("product.active", json.dumps({"id": int(product_id), "active": bool(active)}, ensure_ascii=False, separators=(",", ":"))))
         conn.commit()
-    return V6Repository(database).list_products(query="", active=None, limit=2000)[0] if False else V6Repository(database).upsert_product({
-        "id": int(product_id), "name": str(row[1]), "category": str(row[2]), "brand": str(row[3]), "spec": str(row[4]), "unit": str(row[5]),
-        "stocktake": bool(row[6]), "reminder": reminder_enabled, "active": bool(active), "createdAt": row[9],
-    })
+        return {
+            "id": int(row[0]), "name": str(row[1]), "category": str(row[2]), "brand": str(row[3]), "spec": str(row[4]),
+            "unit": str(row[5]), "stocktake": bool(row[6]), "reminder": reminder_enabled, "active": bool(active), "createdAt": row[9],
+        }
 
 
 def replace_product_unit_v6(database: Any, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -69,7 +72,7 @@ def replace_product_unit_v6(database: Any, payload: Dict[str, Any]) -> Dict[str,
         old_unit = str(row[5])
         if old_unit == new_unit:
             raise ValueError("新单位与原单位相同")
-        if not product_has_history_v6(database, product_id):
+        if not _has_history(conn, product_id):
             raise ValueError("该商品没有历史记录，请直接编辑单位")
 
         new_id = int(conn.execute("SELECT COALESCE(MAX(id),0)+1 FROM products_v6").fetchone()[0])
