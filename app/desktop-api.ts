@@ -22,5 +22,19 @@ export async function desktopRequest<T=unknown>(path:string,options:RequestInit=
   return result;
 }
 
+export async function loadDesktopBootstrap(){
+  return desktopRequest<{settings:any;saleCategories:any[];expenseCategories:any[];security:{hasPassword:boolean;hasRecoveryCode:boolean;passwordChangedAt:string}}>("v2/bootstrap");
+}
+export async function patchDesktopSettings(patch:any){
+  return desktopRequest<{settings:any}>("v2/settings",{method:"POST",body:JSON.stringify({patch})});
+}
+export async function saveSaleCategoriesV2(items:any[]){
+  return desktopRequest<{items:any[]}>("v2/categories/sale",{method:"POST",body:JSON.stringify({items})});
+}
+export async function saveExpenseCategoriesV2(items:any[]){
+  return desktopRequest<{items:any[]}>("v2/categories/expense",{method:"POST",body:JSON.stringify({items})});
+}
+
+// Legacy full-state helpers remain for web compatibility and maintenance tools.
 export async function loadDesktopState(){return (await desktopRequest<{state:any}>("state")).state}
 export async function saveDesktopState(state:any,event="save_state"){return (await desktopRequest<{state:any}>("state",{method:"POST",body:JSON.stringify({state,event})})).state}

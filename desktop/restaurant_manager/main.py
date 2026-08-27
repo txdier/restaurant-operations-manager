@@ -7,6 +7,16 @@ import logging
 from .paths import data_dir, log_file
 from .server import start_server
 from .migration_routes import install_migration_routes
+from .core_data_routes import install_core_data_routes
+from .entry_routes_v6 import install_entry_routes_v6
+from .operations_routes_v6 import install_operations_routes_v6
+from .management_routes_v6 import install_management_routes_v6
+from .configuration_routes_v6 import install_configuration_routes_v6
+from .configuration_v6 import load_settings_v6
+from .storage_export_routes_v6 import install_storage_export_routes
+from .import_routes_v6 import install_import_routes_v6
+from .report_routes_v6 import install_report_routes_v6
+from .report_export_routes_v6 import install_report_export_routes_v6
 from .version import APP_NAME, APP_VERSION
 
 
@@ -31,6 +41,15 @@ def main() -> int:
     configure_logging()
     compatibility_environment()
     install_migration_routes()
+    install_core_data_routes()
+    install_entry_routes_v6()
+    install_operations_routes_v6()
+    install_management_routes_v6()
+    install_configuration_routes_v6()
+    install_storage_export_routes()
+    install_import_routes_v6()
+    install_report_routes_v6()
+    install_report_export_routes_v6()
     logging.info("Starting %s %s", APP_NAME, APP_VERSION)
     from PyQt5.QtCore import QUrl
     from PyQt5.QtCore import Qt, QTimer
@@ -48,7 +67,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     server, url = start_server()
-    branding_settings = server.service.database.load().get("settings", {})
+    branding_settings = load_settings_v6(server.service.database)
     display_name = str(branding_settings.get("appName") or APP_NAME).strip() or APP_NAME
     window_title = str(branding_settings.get("windowTitle") or display_name).strip() or display_name
     app.setApplicationDisplayName(display_name)
