@@ -46,6 +46,10 @@ export async function createExpenseV2(item:any){
   return desktopRequest<{item:any}>("v2/expenses/create",{method:"POST",body:JSON.stringify(item)});
 }
 
+export async function createPurchaseV2(payload:any){
+  return desktopRequest<{purchaseNo:string;items:any[];lineCount:number;amount:number}>("v2/purchases/create",{method:"POST",body:JSON.stringify(payload)});
+}
+
 export async function updateExpenseV2(id:number,patch:any){
   return desktopRequest<{item:any}>("v2/expenses/update",{method:"POST",body:JSON.stringify({id,patch})});
 }
@@ -60,6 +64,18 @@ export async function listProductsV2(q="",active?:boolean,limit=500){
 
 export async function upsertProductV2(item:any){
   return desktopRequest<{item:any}>("v2/products/upsert",{method:"POST",body:JSON.stringify(item)});
+}
+
+export async function productHistoryStatusV2(id:number){
+  return desktopRequest<{hasHistory:boolean}>(`v2/products/history-status${queryString({id})}`);
+}
+
+export async function setProductActiveV2(id:number,active:boolean){
+  return desktopRequest<{item:any}>("v2/products/active",{method:"POST",body:JSON.stringify({id,active})});
+}
+
+export async function replaceProductUnitV2(item:any){
+  return desktopRequest<{oldId:number;newProduct:any}>("v2/products/replace-unit",{method:"POST",body:JSON.stringify(item)});
 }
 
 export async function listIncomeV2(start="",end="",limit=1000){
