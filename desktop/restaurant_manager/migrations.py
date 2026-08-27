@@ -101,30 +101,38 @@ def migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def migrate_database(conn: sqlite3.Connection) -> None:
+    removed_app_state = False
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     with conn:
         conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         conn.execute(
-            "CREATE TABLE IF NOT EXISTS app_state (id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
-        )
-        conn.execute(
             "CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, event TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
         )
-        row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
-        if row is None:
-            state = default_state()
-            conn.execute("INSERT INTO app_state(id,payload) VALUES(1,?)", (json.dumps(state, ensure_ascii=False),))
-        else:
-            state = migrate_state(json.loads(row[0]))
-            conn.execute("UPDATE app_state SET payload=?, updated_at=CURRENT_TIMESTAMP WHERE id=1", (json.dumps(state, ensure_ascii=False),))
-
         if DATA_SCHEMA_VERSION >= RELATIONAL_SCHEMA_VERSION and not relational_state_available(conn):
+            tables = {str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            legacy = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone() if "app_state" in tables else None
+            state = migrate_state(json.loads(legacy[0])) if legacy else default_state()
             state_to_v6(conn, state)
             checks = validate_v6(conn, state)
             conn.execute(
                 "INSERT OR REPLACE INTO schema_migrations(version,applied_at,detail) VALUES(?,?,?)",
                 (RELATIONAL_SCHEMA_VERSION, datetime.now().isoformat(timespec="seconds"), json.dumps(checks, ensure_ascii=False, separators=(",", ":"))),
             )
+        if DATA_SCHEMA_VERSION >= 7:
+            integrity = conn.execute("PRAGMA integrity_check").fetchone()
+            foreign_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+            if not integrity or integrity[0] != "ok" or foreign_errors:
+                raise ValueError("删除旧状态前的关系数据库完整性检查失败")
+            tables = {str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            removed_app_state = "app_state" in tables
+            conn.execute("DROP TABLE IF EXISTS app_state")
+            conn.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version,applied_at,detail) VALUES(?,?,?)",
+                (7, datetime.now().isoformat(timespec="seconds"), json.dumps({"integrity": "ok", "foreignKeyErrors": 0, "appStateRemoved": removed_app_state}, separators=(",", ":"))),
+            )
+            conn.execute("DELETE FROM meta WHERE key='relational_snapshot_dirty'")
         conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('schema_version',?)", (str(DATA_SCHEMA_VERSION),))
         conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('min_app_version',?)", (DATA_SCHEMA_MIN_APP_VERSION,))
+    if removed_app_state:
+        conn.execute("VACUUM")

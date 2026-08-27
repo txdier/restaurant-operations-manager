@@ -97,20 +97,10 @@ def create_purchase_v6(database: Any, payload: Dict[str, Any]) -> Dict[str, Any]
                 "price": cents_to_legacy_number(line["priceCents"]),
             })
 
-        state_row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
-        if not state_row:
-            raise RuntimeError("本地数据库缺少兼容状态")
-        state = json.loads(state_row[0])
-        state.setdefault("expenses", [])[0:0] = created
-        conn.execute(
-            "UPDATE app_state SET payload=?,updated_at=CURRENT_TIMESTAMP WHERE id=1",
-            (json.dumps(state, ensure_ascii=False, separators=(",", ":")),),
-        )
         conn.execute(
             "INSERT INTO audit_log(event,detail) VALUES(?,?)",
             ("purchase.create", json.dumps({"purchaseNo": purchase_no, "lineCount": len(created)}, ensure_ascii=False, separators=(",", ":"))),
         )
-        conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('relational_snapshot_dirty','0')")
         conn.commit()
         return {
             "purchaseNo": purchase_no,

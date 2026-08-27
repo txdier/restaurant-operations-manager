@@ -8,17 +8,8 @@ from .money import cents_to_legacy_number, yuan_to_cents
 from .storage_v6 import _uid
 
 
-def _legacy_state(conn) -> Dict[str, Any]:
-    row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
-    if not row:
-        raise RuntimeError("本地数据库缺少兼容状态")
-    return json.loads(row[0])
-
-
-def _write_state(conn, state: Dict[str, Any], event: str, detail: Dict[str, Any]) -> None:
-    conn.execute("UPDATE app_state SET payload=?,updated_at=CURRENT_TIMESTAMP WHERE id=1", (json.dumps(state, ensure_ascii=False, separators=(",", ":")),))
+def _audit(conn, event: str, detail: Dict[str, Any]) -> None:
     conn.execute("INSERT INTO audit_log(event,detail) VALUES(?,?)", (event, json.dumps(detail, ensure_ascii=False, separators=(",", ":"))))
-    conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('relational_snapshot_dirty','0')")
 
 
 def stocktake_form_v6(database: Any, record_date: str, kind: str) -> Dict[str, Any]:
@@ -89,12 +80,8 @@ def save_stocktake_v6(database: Any, payload: Dict[str, Any]) -> Dict[str, Any]:
                 (stocktake_id, product_id, item["product"], item["unit"], previous, actual, actual - previous, item["note"], ""),
             )
             saved.append(item)
-        state = _legacy_state(conn)
         record = {"id": stocktake_id, "date": record_date, "kind": kind, "rows": saved}
-        values = state.setdefault("stocktakes", [])
-        values[:] = [item for item in values if int(item.get("id", 0)) != stocktake_id and not (str(item.get("date", "")) == record_date and str(item.get("kind", "")) == kind)]
-        values.append(record)
-        _write_state(conn, state, event, {"id": stocktake_id, "lineCount": len(saved)})
+        _audit(conn, event, {"id": stocktake_id, "lineCount": len(saved)})
         conn.commit()
         return record
 
@@ -136,9 +123,7 @@ def create_reminder_v6(database: Any, payload: Dict[str, Any]) -> Dict[str, Any]
         reminder_id = int(conn.execute("SELECT COALESCE(MAX(id),0)+1 FROM reminders_v6").fetchone()[0])
         item = {"id": reminder_id, "name": name, "productId": product_id, "product": str(product[0]), "date": next_date, "cycle": cycle, "done": False}
         conn.execute("INSERT INTO reminders_v6(id,uid,name,product_id,product_name_snapshot,next_date,cycle_days,done,legacy_json) VALUES(?,?,?,?,?,?,?,?,?)", (reminder_id, _uid("reminder", reminder_id, str(reminder_id)), name, product_id, item["product"], next_date, cycle, 0, ""))
-        state = _legacy_state(conn)
-        state.setdefault("reminders", []).append({key: value for key, value in item.items() if key != "productId"})
-        _write_state(conn, state, "reminder.create", {"id": reminder_id})
+        _audit(conn, "reminder.create", {"id": reminder_id})
         conn.commit()
         return item
 
@@ -157,13 +142,7 @@ def finish_reminder_v6(database: Any, reminder_id: int) -> Dict[str, Any]:
             done = False
         conn.execute("UPDATE reminders_v6 SET next_date=?,done=? WHERE id=?", (next_date, int(done), int(reminder_id)))
         item = {"id": int(row[0]), "name": str(row[1]), "productId": row[2], "product": str(row[3]), "date": next_date, "cycle": cycle, "done": done}
-        state = _legacy_state(conn)
-        for legacy in state.get("reminders", []):
-            if int(legacy.get("id", 0)) == int(reminder_id):
-                legacy["date"] = next_date
-                legacy["done"] = done
-                break
-        _write_state(conn, state, "reminder.finish", {"id": int(reminder_id), "nextDate": next_date, "done": done})
+        _audit(conn, "reminder.finish", {"id": int(reminder_id), "nextDate": next_date, "done": done})
         conn.commit()
         return item
 
@@ -172,9 +151,7 @@ def delete_reminder_v6(database: Any, reminder_id: int) -> None:
     with database.lock, database.connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
         conn.execute("DELETE FROM reminders_v6 WHERE id=?", (int(reminder_id),))
-        state = _legacy_state(conn)
-        state["reminders"] = [item for item in state.get("reminders", []) if int(item.get("id", 0)) != int(reminder_id)]
-        _write_state(conn, state, "reminder.delete", {"id": int(reminder_id)})
+        _audit(conn, "reminder.delete", {"id": int(reminder_id)})
         conn.commit()
 
 
@@ -206,17 +183,7 @@ def upsert_employee_v6(database: Any, payload: Dict[str, Any]) -> Dict[str, Any]
         else:
             conn.execute("INSERT INTO employees_v6(id,uid,name,role,standard_salary_cents,start_date,active,legacy_json) VALUES(?,?,?,?,?,?,?,?)", (employee_id, _uid("employee", employee_id, str(employee_id)), name, role, salary_cents, start_date, int(item["active"]), ""))
             event = "employee.create"
-        state = _legacy_state(conn)
-        employees = state.setdefault("employees", [])
-        found = False
-        for index, old in enumerate(employees):
-            if int(old.get("id", 0)) == employee_id:
-                employees[index] = item
-                found = True
-                break
-        if not found:
-            employees.append(item)
-        _write_state(conn, state, event, {"id": employee_id})
+        _audit(conn, event, {"id": employee_id})
         conn.commit()
         return item
 
@@ -248,12 +215,8 @@ def generate_payroll_v6(database: Any, month: str) -> Dict[str, Any]:
         for employee in conn.execute("SELECT id,name,role,standard_salary_cents FROM employees_v6 WHERE active=1 ORDER BY id"):
             conn.execute("INSERT INTO payroll_lines_v6(payroll_id,employee_id,employee_name_snapshot,role_snapshot,standard_salary_cents,actual_salary_cents,note,legacy_json) VALUES(?,?,?,?,?,?,?,?)", (payroll_id, int(employee[0]), str(employee[1]), str(employee[2]), int(employee[3]), int(employee[3]), "", ""))
             rows.append({"employeeId": int(employee[0]), "name": str(employee[1]), "role": str(employee[2]), "standard": cents_to_legacy_number(int(employee[3])), "amount": cents_to_legacy_number(int(employee[3])), "note": ""})
-        state = _legacy_state(conn)
         snapshot = {"month": month, "confirmed": False, "rows": rows}
-        payrolls = state.setdefault("payrolls", [])
-        payrolls[:] = [item for item in payrolls if str(item.get("month", "")) != month]
-        payrolls.append(snapshot)
-        _write_state(conn, state, "payroll.generate", {"month": month, "lineCount": len(rows)})
+        _audit(conn, "payroll.generate", {"month": month, "lineCount": len(rows)})
         conn.commit()
         return snapshot
 
@@ -289,12 +252,8 @@ def save_payroll_v6(database: Any, payload: Dict[str, Any]) -> Dict[str, Any]:
             {"employeeId": row[0], "name": str(row[1]), "role": str(row[2]), "standard": cents_to_legacy_number(int(row[3])), "amount": cents_to_legacy_number(int(row[4])), "note": str(row[5])}
             for row in conn.execute("SELECT employee_id,employee_name_snapshot,role_snapshot,standard_salary_cents,actual_salary_cents,note FROM payroll_lines_v6 WHERE payroll_id=? ORDER BY id", (payroll_id,))
         ]
-        state = _legacy_state(conn)
         snapshot_state = {"month": month, "confirmed": confirmed, "rows": saved_rows}
-        payrolls = state.setdefault("payrolls", [])
-        payrolls[:] = [item for item in payrolls if str(item.get("month", "")) != month]
-        payrolls.append(snapshot_state)
-        _write_state(conn, state, "payroll.save", {"month": month, "confirmed": confirmed})
+        _audit(conn, "payroll.save", {"month": month, "confirmed": confirmed})
         conn.commit()
         return snapshot_state
 
@@ -324,16 +283,6 @@ def upsert_supplier_v6(database: Any, payload: Dict[str, Any]) -> Dict[str, Any]
         else:
             conn.execute("INSERT INTO suppliers_v6(id,uid,name,contact,phone,qualification,note,active,legacy_json) VALUES(?,?,?,?,?,?,?,?,?)", (supplier_id, _uid("supplier", supplier_id, str(supplier_id)), item["name"], item["contact"], item["phone"], item["qualification"], item["note"], int(item["active"]), ""))
             event = "supplier.create"
-        state = _legacy_state(conn)
-        suppliers = state.setdefault("suppliers", [])
-        found = False
-        for index, old in enumerate(suppliers):
-            if int(old.get("id", 0)) == supplier_id:
-                suppliers[index] = item
-                found = True
-                break
-        if not found:
-            suppliers.append(item)
-        _write_state(conn, state, event, {"id": supplier_id})
+        _audit(conn, event, {"id": supplier_id})
         conn.commit()
         return item

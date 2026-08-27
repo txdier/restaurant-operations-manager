@@ -29,8 +29,7 @@ def storage_status(database: Any, verify: bool = False) -> Dict[str, Any]:
         available = relational_state_available(conn)
         schema_row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
         min_app_row = conn.execute("SELECT value FROM meta WHERE key='min_app_version'").fetchone()
-        dirty_row = conn.execute("SELECT value FROM meta WHERE key='relational_snapshot_dirty'").fetchone()
-        app_state_row = conn.execute("SELECT LENGTH(payload) FROM app_state WHERE id=1").fetchone()
+        tables = {str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         migration = conn.execute("SELECT applied_at,detail FROM schema_migrations WHERE version=?", (RELATIONAL_SCHEMA_VERSION,)).fetchone() if available else None
         counts: Dict[str, int] = {}
         if available:
@@ -40,10 +39,11 @@ def storage_status(database: Any, verify: bool = False) -> Dict[str, Any]:
             "schemaVersion": int(schema_row[0]) if schema_row else 0,
             "relationalVersion": RELATIONAL_SCHEMA_VERSION if available else 0,
             "relationalAvailable": available,
-            "relationalDirty": bool(dirty_row and dirty_row[0] == "1"),
+            "relationalDirty": False,
             "minAppVersion": str(min_app_row[0]) if min_app_row else "",
             "databaseSize": Path(database.path).stat().st_size if Path(database.path).exists() else 0,
-            "legacyMirrorBytes": int(app_state_row[0] or 0) if app_state_row else 0,
+            "legacyMirrorBytes": 0,
+            "appStatePresent": "app_state" in tables,
             "counts": counts,
             "migrationAppliedAt": str(migration[0]) if migration else "",
         }

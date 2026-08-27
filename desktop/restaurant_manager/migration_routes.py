@@ -55,7 +55,7 @@ def install_migration_routes() -> None:
             if self.path == "/api/migration/import":
                 source = Path(str(body.get("path", "")))
                 result = import_migration_package(self.service.database, source, self.service._backup_dir())
-                return self._json({"ok": True, **result, "state": self._public_state(self.service.database.load())})
+                return self._json({"ok": True, **result})
             return self._json({"ok": False, "error": "not found"}, HTTPStatus.NOT_FOUND)
         except Exception as error:
             return self._api_error(error)

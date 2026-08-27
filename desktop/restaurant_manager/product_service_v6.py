@@ -32,22 +32,6 @@ def set_product_active_v6(database: Any, product_id: int, active: bool) -> Dict[
         if not active:
             conn.execute("UPDATE reminders_v6 SET done=1 WHERE product_id=? AND done=0", (int(product_id),))
 
-        state_row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
-        if not state_row:
-            raise RuntimeError("本地数据库缺少兼容状态")
-        state = json.loads(state_row[0])
-        for product in state.get("products", []):
-            if int(product.get("id", 0)) == int(product_id):
-                product["active"] = bool(active)
-                if not active:
-                    product["reminder"] = False
-                break
-        if not active:
-            name = str(row[1])
-            for reminder in state.get("reminders", []):
-                if str(reminder.get("product", "")) == name and not reminder.get("done", False):
-                    reminder["done"] = True
-        conn.execute("UPDATE app_state SET payload=?,updated_at=CURRENT_TIMESTAMP WHERE id=1", (json.dumps(state, ensure_ascii=False, separators=(",", ":")),))
         conn.execute("INSERT INTO audit_log(event,detail) VALUES(?,?)", ("product.active", json.dumps({"id": int(product_id), "active": bool(active)}, ensure_ascii=False, separators=(",", ":"))))
         conn.commit()
         return {
@@ -91,22 +75,7 @@ def replace_product_unit_v6(database: Any, payload: Dict[str, Any]) -> Dict[str,
             (new_id, _uid("product", new_id, str(new_id)), name, category, brand, spec, new_unit, int(stocktake), int(reminder), 1, created_at, ""),
         )
 
-        state_row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
-        if not state_row:
-            raise RuntimeError("本地数据库缺少兼容状态")
-        state = json.loads(state_row[0])
-        old_name = str(row[1])
-        for product in state.get("products", []):
-            if int(product.get("id", 0)) == product_id:
-                product["active"] = False
-                product["reminder"] = False
-                break
         replacement = {"id": new_id, "name": name, "category": category, "brand": brand, "spec": spec, "unit": new_unit, "stocktake": stocktake, "reminder": reminder, "active": True, "createdAt": created_at}
-        state.setdefault("products", []).append(replacement)
-        for reminder_row in state.get("reminders", []):
-            if str(reminder_row.get("product", "")) == old_name and not reminder_row.get("done", False):
-                reminder_row["done"] = True
-        conn.execute("UPDATE app_state SET payload=?,updated_at=CURRENT_TIMESTAMP WHERE id=1", (json.dumps(state, ensure_ascii=False, separators=(",", ":")),))
         conn.execute("INSERT INTO audit_log(event,detail) VALUES(?,?)", ("product.replace_unit", json.dumps({"oldId": product_id, "newId": new_id, "oldUnit": old_unit, "newUnit": new_unit}, ensure_ascii=False, separators=(",", ":"))))
         conn.commit()
         return {"oldId": product_id, "newProduct": replacement}

@@ -61,18 +61,11 @@ def patch_settings_v6(database: Any, patch: Dict[str, Any], event: str = "settin
     now = datetime.now().isoformat(timespec="seconds")
     with database.lock, database.connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        state_row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
-        if not state_row:
-            raise RuntimeError("本地数据库缺少兼容状态")
-        state = json.loads(state_row[0])
-        legacy_settings = state.setdefault("settings", {})
         for key, value in clean.items():
             conn.execute(
                 "INSERT OR REPLACE INTO settings_v6(key,value,value_type,updated_at) VALUES(?,?,?,?)",
                 (key, json.dumps(value, ensure_ascii=False), "json", now),
             )
-            legacy_settings[key] = value
-        conn.execute("UPDATE app_state SET payload=?,updated_at=CURRENT_TIMESTAMP WHERE id=1", (json.dumps(state, ensure_ascii=False, separators=(",", ":")),))
         conn.execute("INSERT INTO audit_log(event,detail) VALUES(?,?)", (event, json.dumps({"keys": sorted(clean)}, ensure_ascii=False, separators=(",", ":"))))
         conn.commit()
     return load_settings_v6(database)
@@ -106,12 +99,6 @@ def _save_categories(database: Any, table: str, state_key: str, entity: str, row
             saved.append(item)
         for missing_id in existing_ids - incoming_ids:
             conn.execute(f"UPDATE {table} SET active=0 WHERE id=?", (missing_id,))
-        state_row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
-        if not state_row:
-            raise RuntimeError("本地数据库缺少兼容状态")
-        state = json.loads(state_row[0])
-        state[state_key] = saved
-        conn.execute("UPDATE app_state SET payload=?,updated_at=CURRENT_TIMESTAMP WHERE id=1", (json.dumps(state, ensure_ascii=False, separators=(",", ":")),))
         conn.execute("INSERT INTO audit_log(event,detail) VALUES(?,?)", (f"{state_key}.save", json.dumps({"count": len(saved)}, ensure_ascii=False, separators=(",", ":"))))
         conn.commit()
         return saved
@@ -139,12 +126,6 @@ def change_password_v6(database: Any, current: str, new: str) -> None:
             "INSERT OR REPLACE INTO security_settings(id,password_hash,recovery_hash,password_changed_at,updated_at) VALUES(1,?,?,?,?)",
             (encoded_new, recovery, now, now),
         )
-        state_row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
-        if not state_row:
-            raise RuntimeError("本地数据库缺少兼容状态")
-        state = json.loads(state_row[0])
-        state.setdefault("settings", {})["passwordHash"] = encoded_new
-        conn.execute("UPDATE app_state SET payload=?,updated_at=CURRENT_TIMESTAMP WHERE id=1", (json.dumps(state, ensure_ascii=False, separators=(",", ":")),))
         conn.execute("INSERT INTO audit_log(event,detail) VALUES('change_password','{}')")
         conn.commit()
 

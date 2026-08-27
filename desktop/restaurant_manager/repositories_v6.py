@@ -23,18 +23,7 @@ def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
-def _legacy_state(conn) -> Dict[str, Any]:
-    row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
-    if row is None:
-        raise RuntimeError("本地数据库缺少兼容状态")
-    return json.loads(row[0])
-
-
-def _write_legacy_state(conn, state: Dict[str, Any], event: str, detail: Dict[str, Any]) -> None:
-    conn.execute(
-        "UPDATE app_state SET payload=?, updated_at=CURRENT_TIMESTAMP WHERE id=1",
-        (json.dumps(state, ensure_ascii=False, separators=(",", ":")),),
-    )
+def _audit(conn, event: str, detail: Dict[str, Any]) -> None:
     conn.execute(
         "INSERT INTO audit_log(event,detail) VALUES(?,?)",
         (event, json.dumps(detail, ensure_ascii=False, separators=(",", ":"))),
@@ -112,11 +101,7 @@ def _income_from_row(row) -> Dict[str, Any]:
 
 
 class V6Repository:
-    """Transactional access to schema-v6 tables with an app_state compatibility mirror.
-
-    New API writes use the relational tables as the canonical row representation, while
-    updating app_state in the same transaction so unconverted screens continue to work.
-    """
+    """Transactional access to schema-v6 relational tables."""
 
     def __init__(self, database: Any) -> None:
         self.database = database
@@ -234,10 +219,7 @@ class V6Repository:
                 (new_id,),
             ).fetchone()
             item = _expense_from_row(row)
-            state = _legacy_state(conn)
-            state.setdefault("expenses", []).insert(0, item)
-            _write_legacy_state(conn, state, "expense.create", {"id": new_id})
-            conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('relational_snapshot_dirty','0')")
+            _audit(conn, "expense.create", {"id": new_id})
             conn.commit()
             return item
 
@@ -270,9 +252,7 @@ class V6Repository:
                 (int(expense_id),),
             ).fetchone()
             item = _expense_from_row(row)
-            state = _legacy_state(conn)
-            state["expenses"] = [item if int(x.get("id", 0)) == int(expense_id) else x for x in state.get("expenses", [])]
-            _write_legacy_state(conn, state, "expense.update", {"id": int(expense_id)})
+            _audit(conn, "expense.update", {"id": int(expense_id)})
             conn.commit()
             return item
 
@@ -329,17 +309,7 @@ class V6Repository:
                 (product_id,),
             ).fetchone()
             item = _product_from_row(row)
-            state = _legacy_state(conn)
-            products = state.setdefault("products", [])
-            found = False
-            for index, old in enumerate(products):
-                if int(old.get("id", 0)) == product_id:
-                    products[index] = item
-                    found = True
-                    break
-            if not found:
-                products.append(item)
-            _write_legacy_state(conn, state, event, {"id": product_id})
+            _audit(conn, event, {"id": product_id})
             conn.commit()
             return item
 
@@ -401,11 +371,7 @@ class V6Repository:
                 (income_id,),
             ).fetchone()
             item = _income_from_row(row)
-            state = _legacy_state(conn)
-            records = state.setdefault("incomeRecords", [])
-            records[:] = [old for old in records if int(old.get("id", 0)) != income_id]
-            records.append(item)
-            _write_legacy_state(conn, state, event, {"id": income_id})
+            _audit(conn, event, {"id": income_id})
             conn.commit()
             return item
 

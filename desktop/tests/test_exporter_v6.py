@@ -53,9 +53,10 @@ def test_storage_status_reports_relational_counts_and_integrity(tmp_path: Path):
     db = Database(tmp_path / "restaurant.db")
     _seed(db)
     result = storage_status(db, verify=True)
-    assert result["schemaVersion"] == 6
+    assert result["schemaVersion"] == 7
     assert result["relationalAvailable"] is True
     assert result["relationalDirty"] is False
+    assert result["appStatePresent"] is False
     assert result["counts"]["expenses_v6"] == 3
     assert result["integrity"] == "ok"
     assert result["foreignKeyErrors"] == 0

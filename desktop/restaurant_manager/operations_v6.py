@@ -119,16 +119,7 @@ def save_sales_record_v6(database: Any, payload: Dict[str, Any]) -> Dict[str, An
                 (record_id, category_id or None, category, quantity, amount_cents, _json_extra(row, ("categoryId", "category", "qty", "amount"))),
             )
             saved.append({"categoryId": category_id or None, "category": category, "qty": quantity, "amount": cents_to_legacy_number(amount_cents)})
-        state_row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
-        if not state_row:
-            raise RuntimeError("本地数据库缺少兼容状态")
-        state = json.loads(state_row[0])
         record_state = {"id": record_id, "date": record_date, "rows": saved}
-        records = state.setdefault("salesRecords", [])
-        records[:] = [item for item in records if int(item.get("id", 0)) != record_id and str(item.get("date", "")) != record_date]
-        records.append(record_state)
-        conn.execute("UPDATE app_state SET payload=?,updated_at=CURRENT_TIMESTAMP WHERE id=1", (json.dumps(state, ensure_ascii=False, separators=(",", ":")),))
         conn.execute("INSERT INTO audit_log(event,detail) VALUES(?,?)", (event, json.dumps({"id": record_id, "date": record_date, "lineCount": len(saved)}, ensure_ascii=False, separators=(",", ":"))))
-        conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('relational_snapshot_dirty','0')")
         conn.commit()
         return record_state

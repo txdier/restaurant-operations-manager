@@ -247,7 +247,7 @@ def clear_v6_data(conn: sqlite3.Connection) -> None:
 
 
 def state_to_v6(conn: sqlite3.Connection, state: Dict[str, Any]) -> None:
-    """Materialize legacy state into relational tables without discarding app_state."""
+    """Materialize a legacy state snapshot into relational tables."""
     create_schema_v6(conn)
     clear_v6_data(conn)
     now = _now()
@@ -458,9 +458,9 @@ def relational_state_available(conn: sqlite3.Connection) -> bool:
     return row is not None
 
 
-def rebuild_legacy_state(conn: sqlite3.Connection, base_state: Dict[str, Any]) -> Dict[str, Any]:
-    """Rebuild current legacy API state from v6 tables while preserving unknown top-level keys."""
-    state = dict(base_state)
+def build_relational_state(conn: sqlite3.Connection, base_state: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    """Build the compatibility API response exclusively from relational tables."""
+    state = dict(base_state or {})
     settings = {}
     for key, value in conn.execute("SELECT key,value FROM settings_v6 ORDER BY key"):
         settings[key] = json.loads(value)

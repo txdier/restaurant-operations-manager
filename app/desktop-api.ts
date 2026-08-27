@@ -34,7 +34,3 @@ export async function saveSaleCategoriesV2(items:any[]){
 export async function saveExpenseCategoriesV2(items:any[]){
   return desktopRequest<{items:any[]}>("v2/categories/expense",{method:"POST",body:JSON.stringify({items})});
 }
-
-// Legacy full-state helpers remain for web compatibility and maintenance tools.
-export async function loadDesktopState(){return (await desktopRequest<{state:any}>("state")).state}
-export async function saveDesktopState(state:any,event="save_state"){return (await desktopRequest<{state:any}>("state",{method:"POST",body:JSON.stringify({state,event})})).state}

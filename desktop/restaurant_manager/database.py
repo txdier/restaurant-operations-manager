@@ -13,7 +13,7 @@ from .legacy_sync_v6 import sync_legacy_changes
 from .legacy_sync_v6_extended import EXTENDED_KEYS, sync_extended_legacy_changes
 from .migrations import migrate_database, migrate_state
 from .paths import database_path, default_backup_dir
-from .storage_v6 import rebuild_legacy_state, relational_state_available
+from .storage_v6 import build_relational_state, relational_state_available
 from .version import DATA_SCHEMA_VERSION
 
 
@@ -114,42 +114,30 @@ class Database:
             self._clear_wal_sidecars()
 
     def load(self) -> Dict[str, Any]:
-        """Load runtime state from relational tables, preserving unknown legacy fields.
-
-        app_state is now a compatibility and rollback mirror. Known business groups are
-        rebuilt from schema-v6 tables so relational data is the runtime authority.
-        """
+        """Build the legacy-shaped API response from relational tables only."""
         with self.lock, self.connect() as conn:
-            row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
-            if row is None:
-                raise RuntimeError("本地数据库缺少主数据")
-            base = migrate_state(json.loads(row[0]))
-            if relational_state_available(conn):
-                return migrate_state(rebuild_legacy_state(conn, base))
-            return base
+            if not relational_state_available(conn):
+                raise RuntimeError("本地数据库缺少关系化主数据")
+            return migrate_state(build_relational_state(conn, {"schemaVersion": DATA_SCHEMA_VERSION}))
 
     def save(self, state: Dict[str, Any], event: str = "save_state") -> Dict[str, Any]:
         with self.lock, self.connect() as conn:
-            current_row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
-            current_base = migrate_state(json.loads(current_row[0])) if current_row else {}
-            current = rebuild_legacy_state(conn, current_base) if relational_state_available(conn) else current_base
+            if not relational_state_available(conn):
+                raise RuntimeError("本地数据库缺少关系化主数据")
+            current = migrate_state(build_relational_state(conn, {"schemaVersion": DATA_SCHEMA_VERSION}))
             password_hash = current.get("settings", {}).get("passwordHash")
             state = migrate_state(state)
             if password_hash and not state.get("settings", {}).get("passwordHash"):
                 state["settings"]["passwordHash"] = password_hash
-            payload = json.dumps(state, ensure_ascii=False, separators=(",", ":"))
             conn.execute("BEGIN IMMEDIATE")
             unsupported_changes = sync_legacy_changes(conn, current, state)
             sync_extended_legacy_changes(conn, current, state)
             unsupported_changes = [key for key in unsupported_changes if key not in EXTENDED_KEYS]
-            conn.execute("UPDATE app_state SET payload=?, updated_at=CURRENT_TIMESTAMP WHERE id=1", (payload,))
+            if unsupported_changes:
+                raise ValueError(f"旧状态接口包含不支持的业务组：{', '.join(unsupported_changes)}")
             conn.execute(
                 "INSERT INTO audit_log(event,detail) VALUES(?,?)",
-                (event, json.dumps({"unsupportedRelationalGroups": unsupported_changes}, ensure_ascii=False, separators=(",", ":"))),
-            )
-            conn.execute(
-                "INSERT OR REPLACE INTO meta(key,value) VALUES('relational_snapshot_dirty',?)",
-                ("1" if unsupported_changes else "0",),
+                (event, json.dumps({"source": "relational-v7"}, ensure_ascii=False, separators=(",", ":"))),
             )
             conn.commit()
         return self.load()
@@ -173,10 +161,8 @@ class Database:
             shutil.copy2(source, restore_copy)
             with closing(sqlite3.connect(str(restore_copy))) as check:
                 migrate_database(check)
-                row = check.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
-                if row is None:
-                    raise ValueError("备份中没有可恢复的数据")
-                migrate_state(json.loads(row[0]))
+                if not relational_state_available(check):
+                    raise ValueError("备份中没有可恢复的关系化数据")
                 integrity = check.execute("PRAGMA integrity_check").fetchone()
                 if not integrity or integrity[0] != "ok":
                     raise ValueError("备份数据库完整性检查失败")

@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, List, Tuple
 from uuid import uuid4
 
 from .money import cents_to_legacy_number, yuan_to_cents
-from .storage_v6 import _uid, rebuild_legacy_state
+from .storage_v6 import _uid
 
 
 QUICK_HEADERS = ["日期", "支出类别", "金额", "经手人", "备注"]
@@ -342,21 +342,13 @@ def apply_import_v6(
             (batch_id, batch_payload["file"], imported_at, json.dumps(batch_payload, ensure_ascii=False, separators=(",", ":"))),
         )
 
-        legacy_row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
-        base = json.loads(legacy_row[0]) if legacy_row else {"schemaVersion": 6}
-        mirror = rebuild_legacy_state(conn, base)
-        conn.execute(
-            "UPDATE app_state SET payload=?,updated_at=CURRENT_TIMESTAMP WHERE id=1",
-            (json.dumps(mirror, ensure_ascii=False, separators=(",", ":")),),
-        )
         conn.execute(
             "INSERT INTO audit_log(event,detail) VALUES(?,?)",
             ("import_expenses_v6", json.dumps({"batchId": batch_id, "expenseIds": added_ids}, ensure_ascii=False, separators=(",", ":"))),
         )
-        conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('relational_snapshot_dirty','0')")
         conn.commit()
 
-    return {"batchId": batch_id, "counts": batch_payload, "state": database.load()}
+    return {"batchId": batch_id, "counts": batch_payload}
 
 
 def public_preview(preview: Dict[str, Any]) -> Dict[str, Any]:

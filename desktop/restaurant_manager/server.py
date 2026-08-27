@@ -20,8 +20,7 @@ from typing import Any, Dict, Tuple
 
 from .database import Database
 from .configuration_v6 import change_password_v6, load_settings_v6, patch_settings_v6, verify_unlock_v6
-from .exporter import export_csv_zip, export_query_csv, export_xlsx
-from .importer import apply_import, create_import_template, preview_import
+from .exporter import export_query_csv
 from .paths import data_dir, default_backup_dir, install_dir, log_file, web_dir
 from .security import hash_password, verify_password
 from .version import APP_NAME, APP_VERSION, DATA_SCHEMA_VERSION
@@ -265,19 +264,12 @@ class ApiHandler(BaseHTTPRequestHandler):
         logging.exception("Desktop API request failed: %s", self.path)
         self._json({"ok": False, "error": str(error)}, HTTPStatus.BAD_REQUEST)
 
-    def _public_state(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        visible = json.loads(json.dumps(state))
-        visible.get("settings", {}).pop("passwordHash", None)
-        return visible
-
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path.startswith("/api/"):
             if not self._authorized():
                 return self._json({"ok": False, "error": "unauthorized"}, HTTPStatus.UNAUTHORIZED)
             try:
-                if parsed.path == "/api/state":
-                    return self._json({"ok": True, "state": self._public_state(self.service.database.load())})
                 if parsed.path == "/api/meta":
                     return self._json({"ok": True, "appName": APP_NAME, "version": APP_VERSION, "schemaVersion": DATA_SCHEMA_VERSION, "dataDir": str(data_dir()), "backupDir": str(self.service._backup_dir())})
                 if parsed.path == "/api/backups":
@@ -294,9 +286,6 @@ class ApiHandler(BaseHTTPRequestHandler):
             return self._json({"ok": False, "error": "unauthorized"}, HTTPStatus.UNAUTHORIZED)
         try:
             body = self._body()
-            if self.path == "/api/state":
-                state = self.service.database.save(body.get("state", {}), body.get("event", "save_state"))
-                return self._json({"ok": True, "state": self._public_state(state)})
             if self.path == "/api/backup":
                 configured = str(body.get("targetDir", "")).strip()
                 settings = load_settings_v6(self.service.database)
@@ -312,32 +301,12 @@ class ApiHandler(BaseHTTPRequestHandler):
                 if str(source) not in allowed:
                     raise ValueError("只能恢复当前备份目录中的文件")
                 self.service.database.restore(source)
-                return self._json({"ok": True, "state": self._public_state(self.service.database.load())})
+                return self._json({"ok": True})
             if self.path == "/api/password":
                 self.service.change_password(str(body.get("current", "")), str(body.get("new", "")))
                 return self._json({"ok": True})
             if self.path == "/api/unlock":
                 return self._json({"ok": self.service.unlock(str(body.get("password", "")))})
-            if self.path == "/api/export":
-                state = self.service.database.load()
-                start, end = str(body.get("start", "")), str(body.get("end", ""))
-                stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                kind = body.get("format", "xlsx")
-                extension = "xlsx" if kind == "xlsx" else "zip"
-                label = "Excel 工作簿 (*.xlsx)|*.xlsx" if kind == "xlsx" else "ZIP 压缩包 (*.zip)|*.zip"
-                selected = windows_dialog(
-                    "$d=New-Object System.Windows.Forms.SaveFileDialog;"
-                    "$d.Title='导出餐馆经营数据';"
-                    f"$d.Filter='{label}';$d.DefaultExt='{extension}';$d.AddExtension=$true;"
-                    f"$d.FileName='餐馆经营数据_{stamp}.{extension}';"
-                    "if($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK){$result=$d.FileName};"
-                    "$d.Dispose();$owner.Dispose()"
-                )
-                if not selected:
-                    return self._json({"ok": True, "path": "", "cancelled": True})
-                target = Path(selected)
-                (export_xlsx if kind == "xlsx" else export_csv_zip)(state, target, start, end)
-                return self._json({"ok": True, "path": str(target)})
             if self.path == "/api/export-query":
                 headers, rows = body.get("headers"), body.get("rows")
                 if not isinstance(headers, list) or not headers or len(headers) > 64:
@@ -360,45 +329,6 @@ class ApiHandler(BaseHTTPRequestHandler):
                     return self._json({"ok": True, "path": "", "cancelled": True})
                 target = export_query_csv(headers, rows, Path(selected))
                 return self._json({"ok": True, "path": str(target)})
-            if self.path == "/api/import/template":
-                selected = windows_dialog(
-                    "$d=New-Object System.Windows.Forms.SaveFileDialog;"
-                    "$d.Title='保存餐馆支出导入模板';"
-                    "$d.Filter='Excel 工作簿 (*.xlsx)|*.xlsx';"
-                    "$d.DefaultExt='xlsx';$d.AddExtension=$true;"
-                    "$d.FileName='餐馆支出导入模板.xlsx';"
-                    "if($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK){$result=$d.FileName};"
-                    "$d.Dispose();$owner.Dispose()"
-                )
-                if not selected:
-                    return self._json({"ok": True, "path": "", "cancelled": True})
-                target = create_import_template(Path(selected))
-                return self._json({"ok": True, "path": str(target)})
-            if self.path == "/api/import/preview":
-                preview = preview_import(Path(str(body.get("path", ""))), self.service.database.load())
-                return self._json({"ok": True, "preview": preview})
-            if self.path == "/api/import/apply":
-                source = Path(str(body.get("path", "")))
-                state = self.service.database.load()
-                preview = preview_import(source, state)
-                self.service.database.backup(self.service._backup_dir(state), "before_import")
-                state = apply_import(
-                    preview,
-                    state,
-                    bool(body.get("createUnknownProducts", False)),
-                    bool(body.get("importDuplicateQuickExpenses", False)),
-                )
-                state = self.service.database.save(state, "import_expenses")
-                return self._json({"ok": True, "state": self._public_state(state), "counts": preview["counts"]})
-            if self.path == "/api/select-file":
-                selected = windows_dialog(
-                    "$d=New-Object System.Windows.Forms.OpenFileDialog;"
-                    "$d.Title='选择支出导入文件';"
-                    "$d.Filter='Excel 工作簿 (*.xlsx)|*.xlsx';$d.Multiselect=$false;"
-                    "if($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK){$result=$d.FileName};"
-                    "$d.Dispose();$owner.Dispose()"
-                )
-                return self._json({"ok": True, "path": selected})
             if self.path == "/api/select-logo":
                 dialog_title = "选择桌面图标图片" if body.get("purpose") == "desktop" else "选择软件 Logo"
                 selected = windows_dialog(

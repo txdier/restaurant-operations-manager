@@ -1,6 +1,8 @@
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from restaurant_manager.database import Database
 
 
@@ -17,7 +19,7 @@ def test_legacy_save_incrementally_updates_core_relational_tables(tmp_path: Path
         assert conn.execute("SELECT name,unit FROM products_v6 WHERE id=10").fetchone() == ("抽纸", "包")
         assert conn.execute("SELECT amount_cents,unit_price_cents,product_id FROM expenses_v6 WHERE id=20").fetchone() == (1234, 617, 10)
         assert conn.execute("SELECT dine_in_cents,chess_cents,delivery_cents FROM income_records_v6 WHERE id=30").fetchone() == (10001, 202, 303)
-        assert conn.execute("SELECT value FROM meta WHERE key='relational_snapshot_dirty'").fetchone()[0] == "0"
+        assert conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='app_state'").fetchone()[0] == 0
 
     state = db.load()
     state["products"][0]["name"] = "抽纸新名"
@@ -56,13 +58,14 @@ def test_legacy_save_syncs_extended_relational_groups(tmp_path: Path):
         assert conn.execute("SELECT cycle_days FROM reminders_v6 WHERE id=80").fetchone()[0] == 7
         assert conn.execute("SELECT amount_cents FROM assets_v6 WHERE id=90").fetchone()[0] == 250055
         assert conn.execute("SELECT file_name FROM import_batches_v6 WHERE id='batch-a'").fetchone()[0] == "a.xlsx"
-        assert conn.execute("SELECT value FROM meta WHERE key='relational_snapshot_dirty'").fetchone()[0] == "0"
+        assert conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='app_state'").fetchone()[0] == 0
 
 
-def test_unknown_legacy_group_marks_relational_snapshot_dirty(tmp_path: Path):
+def test_unknown_legacy_group_is_rejected_instead_of_hidden_in_json(tmp_path: Path):
     db = Database(tmp_path / "restaurant.db")
     state = db.load()
     state["futureUnknownData"] = {"value": 1}
-    db.save(state, "legacy_unknown")
+    with pytest.raises(ValueError, match="futureUnknownData"):
+        db.save(state, "legacy_unknown")
     with sqlite3.connect(db.path) as conn:
-        assert conn.execute("SELECT value FROM meta WHERE key='relational_snapshot_dirty'").fetchone()[0] == "1"
+        assert conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='app_state'").fetchone()[0] == 0
