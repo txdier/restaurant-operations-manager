@@ -9,6 +9,7 @@ from .server import start_server
 from .migration_routes import install_migration_routes
 from .core_data_routes import install_core_data_routes
 from .entry_routes_v6 import install_entry_routes_v6
+from .operations_routes_v6 import install_operations_routes_v6
 from .storage_export_routes_v6 import install_storage_export_routes
 from .import_routes_v6 import install_import_routes_v6
 from .report_routes_v6 import install_report_routes_v6
@@ -39,6 +40,7 @@ def main() -> int:
     install_migration_routes()
     install_core_data_routes()
     install_entry_routes_v6()
+    install_operations_routes_v6()
     install_storage_export_routes()
     install_import_routes_v6()
     install_report_routes_v6()
