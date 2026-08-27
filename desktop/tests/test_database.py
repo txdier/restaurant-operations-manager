@@ -55,15 +55,14 @@ def test_money_conversion_uses_decimal_rounding():
     assert cents_to_yuan(1234) == "12.34"
 
 
-def test_legacy_save_marks_relational_snapshot_dirty(tmp_path: Path):
+def test_legacy_core_save_syncs_relational_snapshot(tmp_path: Path):
     db = Database(tmp_path / "restaurant.db")
     state = db.load()
     state["expenses"].append({"id": 10, "date": "2026-08-27", "mode": "快速记账", "category": "耗材", "item": "抹布", "amount": 9.8, "handler": "甲", "status": "有效"})
     db.save(state)
     with sqlite3.connect(db.path) as conn:
-        assert conn.execute("SELECT value FROM meta WHERE key='relational_snapshot_dirty'").fetchone()[0] == "1"
-        # Phase A intentionally does not rebuild every relation table on every whole-state save.
-        assert conn.execute("SELECT COUNT(*) FROM expenses_v6").fetchone()[0] == 0
+        assert conn.execute("SELECT value FROM meta WHERE key='relational_snapshot_dirty'").fetchone()[0] == "0"
+        assert conn.execute("SELECT amount_cents FROM expenses_v6 WHERE id=10").fetchone()[0] == 980
 
 
 def test_backup_restore_preserves_safety_copy(tmp_path: Path):
