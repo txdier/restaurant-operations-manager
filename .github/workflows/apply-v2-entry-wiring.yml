@@ -1,0 +1,58 @@
+name: Apply v2 entry wiring
+
+on:
+  push:
+    branches: [refactor/schema-v6-storage]
+    paths:
+      - ".github/workflows/apply-v2-entry-wiring.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  wire-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/schema-v6-storage
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Wire desktop relational entry pages
+        shell: python
+        run: |
+          from pathlib import Path
+          path=Path("app/page.tsx")
+          text=path.read_text(encoding="utf-8")
+          anchor='import DataExchangeV2 from "./data-exchange-v2";'
+          replacement=anchor+'\nimport IncomeV2 from "./income-v2";\nimport ExpensesV2 from "./expenses-v2";\nimport ProductsV2 from "./products-v2";'
+          if text.count(anchor)!=1: raise SystemExit(f"unexpected import anchor count: {text.count(anchor)}")
+          text=text.replace(anchor,replacement,1)
+
+          replacements={
+            ' if(active==="income")return <Income income={income} setIncome={setIncome} incomeRecords={incomeRecords} setIncomeRecords={setIncomeRecords} total={total} toast={setToast}/>;':
+            ' if(active==="income")return isDesktop()?<IncomeV2 toast={setToast}/>:<Income income={income} setIncome={setIncome} incomeRecords={incomeRecords} setIncomeRecords={setIncomeRecords} total={total} toast={setToast}/>;',
+            ' if(active==="expenses")return <Expenses expenses={expenses} setExpenses={setExpenses} products={products} setProducts={setProducts} expenseCategories={expenseCategories} toast={setToast} go={go}/>;':
+            ' if(active==="expenses")return isDesktop()?<ExpensesV2 expenseCategories={expenseCategories} toast={setToast} go={go}/>:<Expenses expenses={expenses} setExpenses={setExpenses} products={products} setProducts={setProducts} expenseCategories={expenseCategories} toast={setToast} go={go}/>;',
+            ' if(active==="products")return <Products products={products} setProducts={setProducts} expenses={expenses} reminders={reminders} setReminders={setReminders} toast={(message:string)=>{if(message.startsWith("查看 ")){const product=products.find((p:Product)=>message.includes(p.name));if(product)sessionStorage.setItem("report-product-id",String(product.id));sessionStorage.setItem("report-open-price","1");go("reports")}else setToast(message)}}/>;':
+            ' if(active==="products")return isDesktop()?<ProductsV2 toast={setToast} go={go}/>:<Products products={products} setProducts={setProducts} expenses={expenses} reminders={reminders} setReminders={setReminders} toast={(message:string)=>{if(message.startsWith("查看 ")){const product=products.find((p:Product)=>message.includes(p.name));if(product)sessionStorage.setItem("report-product-id",String(product.id));sessionStorage.setItem("report-open-price","1");go("reports")}else setToast(message)}}/>;'
+          }
+          for old,new in replacements.items():
+              if text.count(old)!=1: raise SystemExit(f"unexpected route count {text.count(old)} for {old[:48]}")
+              text=text.replace(old,new,1)
+          path.write_text(text,encoding="utf-8")
+      - name: Install dependencies
+        run: npm ci
+      - name: Build frontend
+        run: npm run build
+      - name: Commit verified wiring and remove one-shot workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/page.tsx
+          git rm .github/workflows/apply-v2-entry-wiring.yml
+          git commit -m "refactor: use relational v2 entry screens"
+          git push origin HEAD:refactor/schema-v6-storage
