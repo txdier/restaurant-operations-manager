@@ -2,7 +2,13 @@ name: Schema v6 Storage Tests
 
 on:
   push:
-    branches: [refactor/schema-v6-storage]
+    branches: [main, refactor/schema-v6-storage]
+    paths:
+      - "desktop/restaurant_manager/**"
+      - "desktop/tests/**"
+      - ".github/workflows/schema-v6-test.yml"
+  pull_request:
+    branches: [main]
     paths:
       - "desktop/restaurant_manager/**"
       - "desktop/tests/**"
