@@ -1,0 +1,27 @@
+name: Schema v6 Storage Tests
+
+on:
+  push:
+    branches: [refactor/schema-v6-storage]
+    paths:
+      - "desktop/restaurant_manager/**"
+      - "desktop/tests/**"
+      - ".github/workflows/schema-v6-test.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.8"
+      - name: Install test dependencies
+        run: python -m pip install pytest==8.3.5
+      - name: Run database migration tests
+        env:
+          PYTHONPATH: desktop
+        run: python -m pytest desktop/tests/test_database.py -q
