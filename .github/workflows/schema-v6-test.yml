@@ -20,7 +20,7 @@ jobs:
         with:
           python-version: "3.8"
       - name: Install test dependencies
-        run: python -m pip install pytest==8.3.5
+        run: python -m pip install pytest==8.3.5 openpyxl==3.1.5
       - name: Compile desktop backend
         run: python -m compileall -q desktop/restaurant_manager
       - name: Run schema v6 storage tests
