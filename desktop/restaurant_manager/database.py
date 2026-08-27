@@ -13,6 +13,7 @@ from .legacy_sync_v6 import sync_legacy_changes
 from .legacy_sync_v6_extended import EXTENDED_KEYS, sync_extended_legacy_changes
 from .migrations import migrate_database, migrate_state
 from .paths import database_path, default_backup_dir
+from .storage_v6 import rebuild_legacy_state, relational_state_available
 from .version import DATA_SCHEMA_VERSION
 
 
@@ -105,18 +106,25 @@ class Database:
             self._clear_wal_sidecars()
 
     def load(self) -> Dict[str, Any]:
-        # app_state remains a compatibility read model in phase B. Every business
-        # group is mirrored into v6 tables in the same transaction on save.
+        """Load runtime state from relational tables, preserving unknown legacy fields.
+
+        app_state is now a compatibility and rollback mirror. Known business groups are
+        rebuilt from schema-v6 tables so relational data is the runtime authority.
+        """
         with self.lock, self.connect() as conn:
             row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
             if row is None:
                 raise RuntimeError("本地数据库缺少主数据")
-            return migrate_state(json.loads(row[0]))
+            base = migrate_state(json.loads(row[0]))
+            if relational_state_available(conn):
+                return migrate_state(rebuild_legacy_state(conn, base))
+            return base
 
     def save(self, state: Dict[str, Any], event: str = "save_state") -> Dict[str, Any]:
         with self.lock, self.connect() as conn:
             current_row = conn.execute("SELECT payload FROM app_state WHERE id=1").fetchone()
-            current = migrate_state(json.loads(current_row[0])) if current_row else {}
+            current_base = migrate_state(json.loads(current_row[0])) if current_row else {}
+            current = rebuild_legacy_state(conn, current_base) if relational_state_available(conn) else current_base
             password_hash = current.get("settings", {}).get("passwordHash")
             state = migrate_state(state)
             if password_hash and not state.get("settings", {}).get("passwordHash"):
@@ -136,7 +144,7 @@ class Database:
                 ("1" if unsupported_changes else "0",),
             )
             conn.commit()
-        return state
+        return self.load()
 
     def backup(self, target_dir: Path | None = None, kind: str = "manual") -> Path:
         target_dir = target_dir or default_backup_dir()
