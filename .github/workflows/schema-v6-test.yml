@@ -26,4 +26,4 @@ jobs:
       - name: Run schema v6 storage tests
         env:
           PYTHONPATH: desktop
-        run: python -m pytest desktop/tests/test_database.py desktop/tests/test_repositories_v6.py desktop/tests/test_legacy_sync_v6.py -q
+        run: python -m pytest desktop/tests/test_database.py desktop/tests/test_repositories_v6.py desktop/tests/test_legacy_sync_v6.py desktop/tests/test_relational_authority_v6.py -q
