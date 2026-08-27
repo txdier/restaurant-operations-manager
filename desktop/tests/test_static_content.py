@@ -151,7 +151,7 @@ def test_data_exchange_is_combined_and_navigation_labels_use_four_characters():
     assert "function DataExchange" in page
     assert 'items={[["import","数据导入"],["export","数据导出"]]}' in page
     assert 'hidden={tab!=="import"}' in page and 'hidden={tab!=="export"}' in page
-    assert 'if(active==="data")return <DataExchange' in page
+    assert 'if(active==="data")return isDesktop()?<DataExchangeV2 toast={setToast}/>:<DataExchange expenses={expenses} toast={setToast}/>' in page
 
 
 def test_query_export_uses_desktop_save_dialog_and_print_action_is_removed():

@@ -36,9 +36,9 @@ class Database:
         candidate = self.path.parent / ".migration-candidate.db"
         candidate.unlink(missing_ok=True)
         try:
-            with sqlite3.connect(str(self.path)) as source, sqlite3.connect(str(candidate)) as dest:
+            with closing(sqlite3.connect(str(self.path))) as source, closing(sqlite3.connect(str(candidate))) as dest:
                 source.backup(dest)
-            with sqlite3.connect(str(candidate), timeout=15) as conn:
+            with closing(sqlite3.connect(str(candidate), timeout=15)) as conn:
                 migrate_database(conn)
                 integrity = conn.execute("PRAGMA integrity_check").fetchone()
                 if not integrity or integrity[0] != "ok":
@@ -82,7 +82,7 @@ class Database:
         root.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
         target = root / f"restaurant_{stamp}_before_schema_v{old_version}_to_v{DATA_SCHEMA_VERSION}.db"
-        with sqlite3.connect(str(self.path)) as source, sqlite3.connect(str(target)) as dest:
+        with closing(sqlite3.connect(str(self.path))) as source, closing(sqlite3.connect(str(target))) as dest:
             source.backup(dest)
         return target
 
